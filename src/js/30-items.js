@@ -94,27 +94,42 @@ GAME.items = (function () {
     if (slot === 'wpn') S.player.wpn = null; else S.player.arm = null;
   }
 
+  /* An item may carry BOTH a heal and an effect - the late medical
+     retainers in 15-data-items-hi do - so neither branch returns
+     early. A heal-only item still refuses when you are not hurt;
+     one that also carries an effect is worth using either way. */
   function useItem(id) {
     var it = get(id), p = S.player;
     if (!it || !count(id)) return { err: 'You do not own that.' };
+    var msg = '', did = false;
+
     if (it.heal) {
       if (p.hospUntil > NOW()) return { err: 'You are already in a hospital bed.' };
-      if (p.health >= maxHealth(p)) return { err: 'You are not hurt.' };
-      var amt = Math.round(maxHealth(p) * (it.heal / 100));
-      p.health = Math.min(maxHealth(p), p.health + amt);
-      remove(id, 1);
-      return { msg: 'You use the ' + it.name + ' and recover ' + fmt(amt) + ' health.' };
+      if (p.health >= maxHealth(p)) {
+        if (!it.effect) return { err: 'You are not hurt.' };
+      } else {
+        var amt = Math.min(Math.round(maxHealth(p) * (it.heal / 100)), maxHealth(p) - p.health);
+        p.health = p.health + amt;
+        msg += ' You recover ' + fmt(amt) + ' health.';
+        did = true;
+      }
     }
+
     if (it.effect) {
       var e = it.effect;
       if (e.stat === 'energy') p.energy = Math.min(p.energyMax, p.energy + e.amount);
       else if (e.stat === 'brave') p.nerve = Math.min(p.nerveMax, p.nerve + e.amount);
       else if (e.stat === 'will') p.will = Math.min(p.willMax, p.will + e.amount);
       else if (e.stat === 'attacks') p.attacks = Math.min(p.attacksMax, p.attacks + e.amount);
-      remove(id, 1);
-      return { msg: 'You use the ' + it.name + '. +' + e.amount + ' ' + e.stat + '.' };
+      if (e.stat === 'energy' || e.stat === 'brave' || e.stat === 'will' || e.stat === 'attacks') {
+        msg += ' +' + e.amount + ' ' + e.stat + '.';
+        did = true;
+      }
     }
-    return { err: 'Nothing happens.' };
+
+    if (!did) return { err: 'Nothing happens.' };
+    remove(id, 1);
+    return { msg: 'You use the ' + it.name + '.' + msg };
   }
 
   return {

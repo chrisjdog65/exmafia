@@ -38,7 +38,7 @@ GAME.normalize = (function () {
     }
     DATA.crimes.sort(function (a, b) { return (a.lvl - b.lvl) || (a.brave - b.brave); });
 
-    /* ---- jobs: authored with an energy cost, paid for in Will ---- */
+    /* ---- jobs: a shift costs Energy ---- */
     DATA.jobs = arr(DATA.jobs);
     for (var j = 0; j < DATA.jobs.length; j++) {
       var jb = DATA.jobs[j];
@@ -58,6 +58,7 @@ GAME.normalize = (function () {
        at each level, then decide how many days that level should take.
        Retune the crimes and the curve follows them.
     -------------------------------------------------------------------- */
+    fitJobPay();
     fitLevelCurve();
     fitRankCurve();
 
@@ -218,6 +219,89 @@ GAME.normalize = (function () {
     if (!arr(DATA.forum.modNotes).length) DATA.forum.modNotes = ['Thread locked.'];
   }
 
+
+  /* A shift has to be worth less than the crime you could be pulling
+     instead. That is the whole point of jobs: they never fail and never
+     put you inside, so they must never be the better earner. Rather than
+     trust the numbers in the table, the pay is rescaled here against
+     whatever the crime table actually says, which means retuning crimes
+     drags jobs along behind them.
+
+     The target is a share of what a day of crime pays, easing down as the
+     numbers get silly at the top. Energy refills faster than Brave, so
+     per ACTION a top job lands near the fifth of a same-level crime the
+     original game ran at. */
+  function jobShare(L) { return clamp(0.40 - 0.10 * Math.min(1, L / 140), 0.28, 0.40); }
+
+  function typicalLabour(L) { return 40 * Math.pow(Math.max(1, L), 1.25); }
+
+  function crimeCashPerDay(L) {
+    var best = 0;
+    for (var i = 0; i < DATA.crimes.length; i++) {
+      var c = DATA.crimes[i];
+      if ((c.lvl || 1) > L) continue;
+      /* what it pays a player who is comfortably past its level gate */
+      var head = L - (c.lvl || 1);
+      var ch = clamp((c.base || 0.5) + (1 - Math.exp(-head / 9)) * 0.30 + 0.20, 0.05, 0.95);
+      var per = ((c.pay[0] + c.pay[1]) / 2) * ch / Math.max(1, c.brave || 1);
+      if (per > best) best = per;
+    }
+    return best * (24 * 60 / 5);          // Brave is one every five minutes
+  }
+
+  function crimeXPPerDay(L) {
+    var best = 0;
+    for (var i = 0; i < DATA.crimes.length; i++) {
+      var c = DATA.crimes[i];
+      if ((c.lvl || 1) > L) continue;
+      var per = ((c.xp[0] + c.xp[1]) / 2) * 0.78 / Math.max(1, c.brave || 1);
+      if (per > best) best = per;
+    }
+    return best * (24 * 60 / 5);
+  }
+
+  function fitJobPay() {
+    if (!DATA.jobs.length || !DATA.crimes.length) return;
+    for (var i = 0; i < DATA.jobs.length; i++) {
+      var j = DATA.jobs[i];
+      var L = j.lvl || 1;
+      var energy = Math.max(1, j.energy || 1);
+      var actions = (24 * 60 / 3) / energy;                 // Energy is one every three minutes
+      var labMult = 1 + Math.log(1 + typicalLabour(L)) / Math.LN10 * 0.28;
+
+      var wantCash = crimeCashPerDay(L) * jobShare(L);
+      var payNow = (j.pay[0] + j.pay[1]) / 2;
+      if (payNow > 0 && actions > 0) {
+        var scale = wantCash / (actions * payNow * labMult);
+        if (isFinite(scale) && scale > 0) {
+          j.pay = [Math.max(1, Math.round(j.pay[0] * scale)), Math.max(2, Math.round(j.pay[1] * scale))];
+          if (j.pay[1] <= j.pay[0]) j.pay[1] = j.pay[0] + Math.max(1, Math.round(j.pay[0] * 0.25));
+        }
+      }
+
+      /* experience follows the same logic, a touch more generous */
+      var wantXP = crimeXPPerDay(L) * (jobShare(L) + 0.12);
+      var xpNow = (j.xp[0] + j.xp[1]) / 2;
+      if (xpNow > 0 && actions > 0) {
+        var xs = wantXP / (actions * xpNow);
+        if (isFinite(xs) && xs > 0) {
+          j.xp = [Math.max(1, Math.round(j.xp[0] * xs)), Math.max(2, Math.round(j.xp[1] * xs))];
+          if (j.xp[1] <= j.xp[0]) j.xp[1] = j.xp[0] + 1;
+        }
+      }
+    }
+    /* nothing may be strictly worse than a job below it */
+    DATA.jobs.sort(function (a, b) { return (a.lvl - b.lvl) || (a.energy - b.energy); });
+    for (var k = 1; k < DATA.jobs.length; k++) {
+      var prev = DATA.jobs[k - 1], cur = DATA.jobs[k];
+      var pPer = ((prev.pay[0] + prev.pay[1]) / 2) / Math.max(1, prev.energy);
+      var cPer = ((cur.pay[0] + cur.pay[1]) / 2) / Math.max(1, cur.energy);
+      if (cPer <= pPer) {
+        var bump = (pPer * 1.06 * cur.energy) / Math.max(1, (cur.pay[0] + cur.pay[1]) / 2);
+        cur.pay = [Math.round(cur.pay[0] * bump), Math.round(cur.pay[1] * bump)];
+      }
+    }
+  }
 
   /* Best crime / job an account of this level would settle on. */
   function bestCrimeAt(L) {

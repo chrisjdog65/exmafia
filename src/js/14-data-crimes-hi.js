@@ -56,21 +56,37 @@
 
    Ten legitimate-front titles, levels 55 to 160, gated on Labour
    from 400 up to 9,000 - the first jobs in the game to want the
-   stat at all. Energy 10 -> 22.
+   stat at all. Energy 14 -> 34.
 
-   Pay is set at 0.40x the headline take of a same-level crime at
-   the bottom and tapers to 0.26x at the top, which is the ratio
-   the old table already ran at. What matters is the DAILY figure:
-   Will regenerates 120 a day against Brave's 288, so once the
-   costs are divided out a job earner clears 18-24% of what a
-   crime earner clears at the same level. Roughly a fifth, every
-   rung, all the way up. XP is held at 0.50-0.57x of the crime at
-   the same level, matching the old table's 0.61-0.70 band as
-   Brave costs climb away from Will costs.
+   A JOB COSTS ENERGY, NOT WILL. 35-crimes work() spends j.energy
+   and nothing else; Will is the gym's currency. That matters
+   because the two bars refill at very different speeds, and the
+   DAILY figure is the only one worth quoting:
 
-   pay/Will and xp/Will both rise strictly with level across all
-   32 jobs, including where these ten interleave with the old
-   ones at 55, 66 and 71. Nothing here dominates a job below it.
+     Energy  +1 / 3 min   = 480 a day   jobs
+     Brave   +1 / 5 min   = 288 a day   crimes
+
+   So a job earner gets two thirds again as many actions a day as
+   a crime earner, and work() then multiplies the headline pay by
+   (1 + log10(1 + Labour) * 0.28) - which at Labour 9,000 is a
+   x2.11 on top. Both of those have to come out before any
+   comparison means anything.
+
+   Headline pay is 0.28x-0.39x of the same-level crime, which is
+   the band the old table already ran at. Once the Energy cost,
+   the Labour multiplier and the crime's own failure rate are all
+   divided out, a job earner clears 94-105% of what a crime earner
+   clears at the same level - the same near-parity the old table
+   holds from level 48 up (96-106%), and the reason to commit a
+   crime instead is mastery, drops and the fact that jobs cap out
+   flat while a crime pays a city bonus. XP lands in the same
+   band. The Energy costs are set FROM those ratios, which is why
+   they jump where they do rather than climbing one a rung.
+
+   pay/Energy and xp/Energy both rise strictly with level across
+   every job from level 10 up, including where these ten interleave
+   with the old ones at 55, 66 and 71. Nothing here dominates a job
+   below it.
 
    ------------------------------------------------------------
    CITIES - four more hops off the frontier
@@ -199,43 +215,43 @@ DATA.crimes = (DATA.crimes || []).concat([
 
 DATA.jobs = (DATA.jobs || []).concat([
 
-  { id: 'uniontrustee', name: "Sit as trustee on the union local", lvl: 55, energy: 10, lab: 400,
+  { id: 'uniontrustee', name: "Sit as trustee on the union local", lvl: 55, energy: 14, lab: 400,
     pay: [44200, 63800], xp: [1310, 1890],
     desc: 'Your name on the fund, your signature on the cheques, and one meeting a quarter where nobody asks a single question.' },
 
-  { id: 'portscheduler', name: "Schedule the berths for the port authority", lvl: 66, energy: 13, lab: 620,
+  { id: 'portscheduler', name: "Schedule the berths for the port authority", lvl: 66, energy: 14, lab: 620,
     pay: [131000, 189000], xp: [3430, 4970],
     desc: 'You decide which ship unloads and which ship waits, and every hour of waiting costs somebody twelve thousand dollars.' },
 
-  { id: 'cagesupervisor', name: "Supervise the casino cage", lvl: 71, energy: 15, lab: 900,
+  { id: 'cagesupervisor', name: "Supervise the casino cage", lvl: 71, energy: 18, lab: 900,
     pay: [311000, 449000], xp: [5870, 8530],
     desc: 'Every chip in the building crosses your window twice. They trust you with the count because you always look so tired.' },
 
-  { id: 'bondingagent', name: "Write bonds for the construction trade", lvl: 80, energy: 16, lab: 1300,
+  { id: 'bondingagent', name: "Write bonds for the construction trade", lvl: 80, energy: 22, lab: 1300,
     pay: [943000, 1360000], xp: [14000, 20200],
     desc: 'No bond, no site. You have never refused a contractor in your life and not one of them has ever asked you why.' },
 
-  { id: 'haulagedirector', name: "Direct the waste haulage board", lvl: 92, energy: 17, lab: 1850,
+  { id: 'haulagedirector', name: "Direct the waste haulage board", lvl: 92, energy: 25, lab: 1850,
     pay: [2320000, 3350000], xp: [30500, 44300],
     desc: 'Nine hundred trucks across four states, and a landfill that has been quietly accepting deliveries after dark since 1974.' },
 
-  { id: 'complianceofficer', name: "Be the compliance officer at a private bank", lvl: 105, energy: 18, lab: 2550,
+  { id: 'complianceofficer', name: "Be the compliance officer at a private bank", lvl: 105, energy: 30, lab: 2550,
     pay: [5480000, 7910000], xp: [64700, 94100],
     desc: 'Your entire job is to notice things. Corner office, name on the door, and a spotless record of noticing nothing whatsoever.' },
 
-  { id: 'freeportcurator', name: "Curate a freeport art vault", lvl: 118, energy: 19, lab: 3400,
+  { id: 'freeportcurator', name: "Curate a freeport art vault", lvl: 118, energy: 30, lab: 3400,
     pay: [7950000, 11500000], xp: [92300, 134000],
     desc: 'Crates that never clear customs, owners who never visit, and a valuation that climbs every time the crate changes hands in the dark.' },
 
-  { id: 'ratingsanalyst', name: "Rate the paper for the ratings house", lvl: 132, energy: 20, lab: 4500,
+  { id: 'ratingsanalyst', name: "Rate the paper for the ratings house", lvl: 132, energy: 31, lab: 4500,
     pay: [11400000, 16400000], xp: [130000, 189000],
     desc: 'You put a letter on a stack of debt nobody has read. It is always the same letter, and it is always the same fee.' },
 
-  { id: 'wealthconsultant', name: "Consult for a sovereign wealth fund", lvl: 146, energy: 21, lab: 6300,
+  { id: 'wealthconsultant', name: "Consult for a sovereign wealth fund", lvl: 146, energy: 33, lab: 6300,
     pay: [15500000, 22400000], xp: [183000, 265000],
     desc: "A small country's entire savings, one committee of nine, and a per-diem that would embarrass a head of state." },
 
-  { id: 'centralbankchair', name: "Advise a central bank on reserves", lvl: 160, energy: 22, lab: 9000,
+  { id: 'centralbankchair', name: "Advise a central bank on reserves", lvl: 160, energy: 34, lab: 9000,
     pay: [18400000, 26500000], xp: [222000, 322000],
     desc: 'They pay you to tell them what their own money is doing all day. You tell them most of it, and you tell them slowly.' }
 

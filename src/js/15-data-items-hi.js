@@ -17,12 +17,17 @@
        power = (atk * 1.45 + 2) * acc            (31-combat)
        price = power * PP(L)
 
-   PP(L) is the going rate for one point of power at level L. It
-   is read straight off the existing table below 85 (log-linear
-   between the real rungs: $8.9k at 48, $16.4k at 57, $28.1k at
-   65, $39.8k at 70, $49.6k at 74, $65.3k at 79, $85.8k at 84,
-   $90.9k at 85 - Last Rites) and above 85 it keeps climbing at a
-   rate that decays every single level:
+   PP(L) is the going rate for one point of power at level L.
+   Below 85 it is pinned to the REAL rungs of the existing table -
+   $26.1k at 64 (Last Word), $28.1k at 65 (Stovepipe), $37.7k at
+   69 (The Six Hundred), $46.0k at 71 (Carousel), $74.7k at 76
+   (Kingmaker), $77.5k at 78 (The Foundry), $90.9k at 85 (Last
+   Rites) - and the rungs added here are slotted log-linearly
+   between them: $8.9k at 48, $16.5k at 57, $28.1k at 65, $35.0k
+   at 68, $40.9k at 70, $51.8k at 74, $79.9k at 79, $85.8k at 84.
+   Merged and sorted by level, PP rises monotonically across all
+   104 weapons in the game from level 59 up. Above 85 it keeps
+   climbing at a rate that decays every single level:
 
        PP(L+1) / PP(L) = 1 + 0.0545 - 0.000225 * (L - 85)
 
@@ -72,10 +77,16 @@
 
    MEDICAL. heal is a percentage and 30-items.js clamps the result
    at your maximum, so 100 is 100 and the Private Clinic Suite
-   reached the ceiling back at level 55. Everything above it is
-   priced as a luxury good and written as one: the joke is that
-   the four-million-dollar surgeon gets you to exactly the same
-   place as the roll of bandages, only with better parking.
+   reached the ceiling back at level 55. Four more heal-100 items
+   above that line would be four items STRICTLY DOMINATED by a
+   $300,000 one, so each of these carries a second payload as
+   well - Energy, Brave, Will and Attacks in turn, the last of
+   those the only item in the game that hands back an attack.
+   30-items.js useItem() applies heal AND effect when an item has
+   both, which no other item does. Sized off the booster ladder
+   with the $300,000 the heal is already worth taken off the top
+   first, so the retainer is a luxury that is finally worth its
+   price rather than a joke at the buyer's expense.
 
    BOOSTERS stay loss-making. Priced at the time-value of the
    resource they hand back - minutes of regeneration times what a
@@ -83,6 +94,14 @@
    times 1.0 for Energy, which is the ratio the base table already
    uses. Amounts are sized to fill the bar at their unlock level
    and no further, because 30-items.js clamps the overflow.
+
+   NOTHING IN THIS FILE IS STRICTLY DOMINATED. Because damage is
+   acc * (str * 0.115 + atk * 1.45 + 2), one weapon beats another
+   at EVERY Strength only when it has both the higher accuracy and
+   the higher power, so the test that matters is: no cheaper
+   weapon at or below this level has both. Every one of the 24
+   passes it, and so does every suit, every retainer and every
+   booster on its own axis.
    ============================================================ */
 
 DATA.items = (DATA.items || []).concat([
@@ -98,16 +117,16 @@ DATA.items = (DATA.items || []).concat([
     atk: 63, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
     desc: 'Eight feet of ash with a hooked steel head. Came off a tug and went straight into the back of a station wagon.' },
 
-  { id: 'quarrymaul', name: 'Quarry Maul', cat: 'melee', lvl: 57, price: 1640000,
-    atk: 86, def: 0, acc: 0.79, heal: 0, effect: null, stock: true,
+  { id: 'quarrymaul', name: 'Quarry Maul', cat: 'melee', lvl: 57, price: 1930000,
+    atk: 88, def: 0, acc: 0.9, heal: 0, effect: null, stock: true,
     desc: 'Twelve pounds on a hickory handle. Slow enough to read a paper between swings, and it does not seem to matter.' },
 
   { id: 'barbersrazor', name: "Barber's Razor", cat: 'melee', lvl: 68, price: 4850000,
     atk: 96, def: 0, acc: 0.98, heal: 0, effect: null, stock: true,
     desc: 'Bone handle, stropped every morning for forty years by a man who never once nicked a customer.' },
 
-  { id: 'rebarwhip', name: 'Rebar Whip', cat: 'melee', lvl: 86, price: 18300000,
-    atk: 140, def: 0, acc: 0.93, heal: 0, effect: null, stock: true,
+  { id: 'rebarwhip', name: 'Rebar Whip', cat: 'melee', lvl: 86, price: 19100000,
+    atk: 140, def: 0, acc: 0.97, heal: 0, effect: null, stock: true,
     desc: 'Four feet of construction steel with the ribs still on it. Bends around whatever you were aiming at and finds it anyway.' },
 
   { id: 'fullstop', name: 'The Full Stop', cat: 'melee', lvl: 110, price: 97000000,
@@ -123,16 +142,16 @@ DATA.items = (DATA.items || []).concat([
     atk: 129, def: 0, acc: 0.89, heal: 0, effect: null, stock: true,
     desc: 'Matte grey, no shine, no engraving. It turns up, handles the arrangements and is gone before the family arrives.' },
 
-  { id: 'nightwatchman', name: 'Nightwatchman', cat: 'pistol', lvl: 74, price: 9980000,
-    atk: 160, def: 0, acc: 0.86, heal: 0, effect: null, stock: true,
+  { id: 'nightwatchman', name: 'Nightwatchman', cat: 'pistol', lvl: 74, price: 11200000,
+    atk: 172, def: 0, acc: 0.86, heal: 0, effect: null, stock: true,
     desc: 'A big slow automatic built for men who sit in booths. Chambered for something you could post a letter with.' },
 
   { id: 'quietman', name: 'The Quiet Man', cat: 'pistol', lvl: 87, price: 28100000,
     atk: 202, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
     desc: 'Suppressed, subsonic and about as loud as a chair being moved in the next room. Steady as a bench rest.' },
 
-  { id: 'bishopspiece', name: "Bishop's Piece", cat: 'pistol', lvl: 101, price: 71700000,
-    atk: 268, def: 0, acc: 0.87, heal: 0, effect: null, stock: true,
+  { id: 'bishopspiece', name: "Bishop's Piece", cat: 'pistol', lvl: 101, price: 85300000,
+    atk: 292, def: 0, acc: 0.95, heal: 0, effect: null, stock: true,
     desc: 'Came out of a cathedral safe alongside two passports and a bearer bond. Nobody has ever asked the obvious question.' },
 
   { id: 'thenotary', name: 'The Notary', cat: 'pistol', lvl: 120, price: 230000000,
@@ -144,16 +163,16 @@ DATA.items = (DATA.items || []).concat([
      SMG  (5)  levels 70 - 125
      ========================================================== */
 
-  { id: 'papershredder', name: 'Paper Shredder', cat: 'smg', lvl: 70, price: 8310000,
-    atk: 168, def: 0, acc: 0.85, heal: 0, effect: null, stock: true,
+  { id: 'papershredder', name: 'Paper Shredder', cat: 'smg', lvl: 70, price: 8750000,
+    atk: 172, def: 0, acc: 0.85, heal: 0, effect: null, stock: true,
     desc: 'Feeds from the top, empties in a hurry, and leaves behind nothing anybody could put back together.' },
 
-  { id: 'metronome', name: 'The Metronome', cat: 'smg', lvl: 79, price: 17600000,
-    atk: 205, def: 0, acc: 0.90, heal: 0, effect: null, stock: true,
+  { id: 'metronome', name: 'The Metronome', cat: 'smg', lvl: 79, price: 23500000,
+    atk: 224, def: 0, acc: 0.90, heal: 0, effect: null, stock: true,
     desc: 'Six hundred a minute, dead even, never a stumble. You could set a watch by it and one or two people have.' },
 
-  { id: 'hailstorm', name: 'The Hailstorm', cat: 'smg', lvl: 92, price: 44500000,
-    atk: 275, def: 0, acc: 0.84, heal: 0, effect: null, stock: true,
+  { id: 'hailstorm', name: 'The Hailstorm', cat: 'smg', lvl: 92, price: 45600000,
+    atk: 282, def: 0, acc: 0.84, heal: 0, effect: null, stock: true,
     desc: 'Two barrels, one trigger, and a noise on the roof that carries on considerably longer than you expect.' },
 
   { id: 'meatgrinder', name: 'Meat Grinder', cat: 'smg', lvl: 107, price: 144000000,
@@ -248,25 +267,38 @@ DATA.items = (DATA.items || []).concat([
   /* ==========================================================
      MEDICAL  (4)
      heal is clamped at your maximum, so 100 is the ceiling and
-     the Private Clinic Suite hit it at level 55. These are the
-     same outcome at four escalating prices, which is the joke.
+     the Private Clinic Suite hit it at level 55. A heal-only item
+     above that line would be STRICTLY DOMINATED by a $300,000
+     one - same effect, more money - so each of these four carries
+     a second, unique payload as well. 30-items.js useItem()
+     applies heal AND effect when an item has both, and no other
+     item in the game has both, so nothing below this line changes.
+
+     The payload is priced off the booster ladder's own law: the
+     regeneration minutes it hands back, times what a minute is
+     worth at that level, times 1.9 for Brave, Will and Attacks
+     and 1.0 for Energy - with $300,000 taken off the top first,
+     because that is what the heal alone is already worth.
+
+       Energy +1 = 3 real minutes   Brave +1 = 5
+       Will   +1 = 12               Attack +1 = 20
      ========================================================== */
 
   { id: 'ambulanceretainer', name: 'Ambulance on Retainer', cat: 'medical', lvl: 72, price: 1050000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'Parked around the corner from wherever you happen to be, engine running and meter running. Gets you upright entirely, which is all anything does.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'energy', amount: 35 }, stock: true,
+    desc: 'Parked around the corner from wherever you happen to be, engine running and meter running. Gets you upright, and then it drives you to wherever you were going.' },
 
   { id: 'surgeonowes', name: 'The Surgeon Who Owes You', cat: 'medical', lvl: 92, price: 4000000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'He lost badly at your table in 1981 and has been paying it back in sutures ever since. Same result as a roll of gauze, reached with far better lighting.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'brave', amount: 11 }, stock: true,
+    desc: 'He lost badly at your table in 1981 and has been paying it back in sutures ever since. Puts you back together and tells you, every time, that you were never in any danger.' },
 
   { id: 'hospitalwing', name: 'A Wing With Your Name Off It', cat: 'medical', lvl: 115, price: 16000000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'You funded the whole floor, they thanked you privately, and there is always a bed made up. Full recovery. So were the bandages.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'will', amount: 7 }, stock: true,
+    desc: 'You funded the whole floor, they thanked you privately, and there is always a bed made up. Nobody wakes you, nobody bills you, and you come off it rested.' },
 
   { id: 'standingorder', name: 'The Standing Order', cat: 'medical', lvl: 145, price: 77000000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'Three specialists on salary, a helicopter on a roof and your blood type on ice in four cities. You will be completely fine. You were always going to be.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'attacks', amount: 7 }, stock: true,
+    desc: 'Three specialists on salary, a helicopter on a roof and your blood type on ice in four cities. You will be completely fine, and you will be fine again by tonight.' },
 
 
   /* ==========================================================

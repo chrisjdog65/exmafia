@@ -3026,21 +3026,37 @@ DATA.cities = [
 
    Ten legitimate-front titles, levels 55 to 160, gated on Labour
    from 400 up to 9,000 - the first jobs in the game to want the
-   stat at all. Energy 10 -> 22.
+   stat at all. Energy 14 -> 34.
 
-   Pay is set at 0.40x the headline take of a same-level crime at
-   the bottom and tapers to 0.26x at the top, which is the ratio
-   the old table already ran at. What matters is the DAILY figure:
-   Will regenerates 120 a day against Brave's 288, so once the
-   costs are divided out a job earner clears 18-24% of what a
-   crime earner clears at the same level. Roughly a fifth, every
-   rung, all the way up. XP is held at 0.50-0.57x of the crime at
-   the same level, matching the old table's 0.61-0.70 band as
-   Brave costs climb away from Will costs.
+   A JOB COSTS ENERGY, NOT WILL. 35-crimes work() spends j.energy
+   and nothing else; Will is the gym's currency. That matters
+   because the two bars refill at very different speeds, and the
+   DAILY figure is the only one worth quoting:
 
-   pay/Will and xp/Will both rise strictly with level across all
-   32 jobs, including where these ten interleave with the old
-   ones at 55, 66 and 71. Nothing here dominates a job below it.
+     Energy  +1 / 3 min   = 480 a day   jobs
+     Brave   +1 / 5 min   = 288 a day   crimes
+
+   So a job earner gets two thirds again as many actions a day as
+   a crime earner, and work() then multiplies the headline pay by
+   (1 + log10(1 + Labour) * 0.28) - which at Labour 9,000 is a
+   x2.11 on top. Both of those have to come out before any
+   comparison means anything.
+
+   Headline pay is 0.28x-0.39x of the same-level crime, which is
+   the band the old table already ran at. Once the Energy cost,
+   the Labour multiplier and the crime's own failure rate are all
+   divided out, a job earner clears 94-105% of what a crime earner
+   clears at the same level - the same near-parity the old table
+   holds from level 48 up (96-106%), and the reason to commit a
+   crime instead is mastery, drops and the fact that jobs cap out
+   flat while a crime pays a city bonus. XP lands in the same
+   band. The Energy costs are set FROM those ratios, which is why
+   they jump where they do rather than climbing one a rung.
+
+   pay/Energy and xp/Energy both rise strictly with level across
+   every job from level 10 up, including where these ten interleave
+   with the old ones at 55, 66 and 71. Nothing here dominates a job
+   below it.
 
    ------------------------------------------------------------
    CITIES - four more hops off the frontier
@@ -3169,43 +3185,43 @@ DATA.crimes = (DATA.crimes || []).concat([
 
 DATA.jobs = (DATA.jobs || []).concat([
 
-  { id: 'uniontrustee', name: "Sit as trustee on the union local", lvl: 55, energy: 10, lab: 400,
+  { id: 'uniontrustee', name: "Sit as trustee on the union local", lvl: 55, energy: 14, lab: 400,
     pay: [44200, 63800], xp: [1310, 1890],
     desc: 'Your name on the fund, your signature on the cheques, and one meeting a quarter where nobody asks a single question.' },
 
-  { id: 'portscheduler', name: "Schedule the berths for the port authority", lvl: 66, energy: 13, lab: 620,
+  { id: 'portscheduler', name: "Schedule the berths for the port authority", lvl: 66, energy: 14, lab: 620,
     pay: [131000, 189000], xp: [3430, 4970],
     desc: 'You decide which ship unloads and which ship waits, and every hour of waiting costs somebody twelve thousand dollars.' },
 
-  { id: 'cagesupervisor', name: "Supervise the casino cage", lvl: 71, energy: 15, lab: 900,
+  { id: 'cagesupervisor', name: "Supervise the casino cage", lvl: 71, energy: 18, lab: 900,
     pay: [311000, 449000], xp: [5870, 8530],
     desc: 'Every chip in the building crosses your window twice. They trust you with the count because you always look so tired.' },
 
-  { id: 'bondingagent', name: "Write bonds for the construction trade", lvl: 80, energy: 16, lab: 1300,
+  { id: 'bondingagent', name: "Write bonds for the construction trade", lvl: 80, energy: 22, lab: 1300,
     pay: [943000, 1360000], xp: [14000, 20200],
     desc: 'No bond, no site. You have never refused a contractor in your life and not one of them has ever asked you why.' },
 
-  { id: 'haulagedirector', name: "Direct the waste haulage board", lvl: 92, energy: 17, lab: 1850,
+  { id: 'haulagedirector', name: "Direct the waste haulage board", lvl: 92, energy: 25, lab: 1850,
     pay: [2320000, 3350000], xp: [30500, 44300],
     desc: 'Nine hundred trucks across four states, and a landfill that has been quietly accepting deliveries after dark since 1974.' },
 
-  { id: 'complianceofficer', name: "Be the compliance officer at a private bank", lvl: 105, energy: 18, lab: 2550,
+  { id: 'complianceofficer', name: "Be the compliance officer at a private bank", lvl: 105, energy: 30, lab: 2550,
     pay: [5480000, 7910000], xp: [64700, 94100],
     desc: 'Your entire job is to notice things. Corner office, name on the door, and a spotless record of noticing nothing whatsoever.' },
 
-  { id: 'freeportcurator', name: "Curate a freeport art vault", lvl: 118, energy: 19, lab: 3400,
+  { id: 'freeportcurator', name: "Curate a freeport art vault", lvl: 118, energy: 30, lab: 3400,
     pay: [7950000, 11500000], xp: [92300, 134000],
     desc: 'Crates that never clear customs, owners who never visit, and a valuation that climbs every time the crate changes hands in the dark.' },
 
-  { id: 'ratingsanalyst', name: "Rate the paper for the ratings house", lvl: 132, energy: 20, lab: 4500,
+  { id: 'ratingsanalyst', name: "Rate the paper for the ratings house", lvl: 132, energy: 31, lab: 4500,
     pay: [11400000, 16400000], xp: [130000, 189000],
     desc: 'You put a letter on a stack of debt nobody has read. It is always the same letter, and it is always the same fee.' },
 
-  { id: 'wealthconsultant', name: "Consult for a sovereign wealth fund", lvl: 146, energy: 21, lab: 6300,
+  { id: 'wealthconsultant', name: "Consult for a sovereign wealth fund", lvl: 146, energy: 33, lab: 6300,
     pay: [15500000, 22400000], xp: [183000, 265000],
     desc: "A small country's entire savings, one committee of nine, and a per-diem that would embarrass a head of state." },
 
-  { id: 'centralbankchair', name: "Advise a central bank on reserves", lvl: 160, energy: 22, lab: 9000,
+  { id: 'centralbankchair', name: "Advise a central bank on reserves", lvl: 160, energy: 34, lab: 9000,
     pay: [18400000, 26500000], xp: [222000, 322000],
     desc: 'They pay you to tell them what their own money is doing all day. You tell them most of it, and you tell them slowly.' }
 
@@ -3342,16 +3358,16 @@ DATA.items = (DATA.items || []).concat([
     atk: 63, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
     desc: 'Eight feet of ash with a hooked steel head. Came off a tug and went straight into the back of a station wagon.' },
 
-  { id: 'quarrymaul', name: 'Quarry Maul', cat: 'melee', lvl: 57, price: 1640000,
-    atk: 86, def: 0, acc: 0.79, heal: 0, effect: null, stock: true,
+  { id: 'quarrymaul', name: 'Quarry Maul', cat: 'melee', lvl: 57, price: 1930000,
+    atk: 88, def: 0, acc: 0.9, heal: 0, effect: null, stock: true,
     desc: 'Twelve pounds on a hickory handle. Slow enough to read a paper between swings, and it does not seem to matter.' },
 
   { id: 'barbersrazor', name: "Barber's Razor", cat: 'melee', lvl: 68, price: 4850000,
     atk: 96, def: 0, acc: 0.98, heal: 0, effect: null, stock: true,
     desc: 'Bone handle, stropped every morning for forty years by a man who never once nicked a customer.' },
 
-  { id: 'rebarwhip', name: 'Rebar Whip', cat: 'melee', lvl: 86, price: 18300000,
-    atk: 140, def: 0, acc: 0.93, heal: 0, effect: null, stock: true,
+  { id: 'rebarwhip', name: 'Rebar Whip', cat: 'melee', lvl: 86, price: 19100000,
+    atk: 140, def: 0, acc: 0.97, heal: 0, effect: null, stock: true,
     desc: 'Four feet of construction steel with the ribs still on it. Bends around whatever you were aiming at and finds it anyway.' },
 
   { id: 'fullstop', name: 'The Full Stop', cat: 'melee', lvl: 110, price: 97000000,
@@ -3367,16 +3383,16 @@ DATA.items = (DATA.items || []).concat([
     atk: 129, def: 0, acc: 0.89, heal: 0, effect: null, stock: true,
     desc: 'Matte grey, no shine, no engraving. It turns up, handles the arrangements and is gone before the family arrives.' },
 
-  { id: 'nightwatchman', name: 'Nightwatchman', cat: 'pistol', lvl: 74, price: 9980000,
-    atk: 160, def: 0, acc: 0.86, heal: 0, effect: null, stock: true,
+  { id: 'nightwatchman', name: 'Nightwatchman', cat: 'pistol', lvl: 74, price: 11200000,
+    atk: 172, def: 0, acc: 0.86, heal: 0, effect: null, stock: true,
     desc: 'A big slow automatic built for men who sit in booths. Chambered for something you could post a letter with.' },
 
   { id: 'quietman', name: 'The Quiet Man', cat: 'pistol', lvl: 87, price: 28100000,
     atk: 202, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
     desc: 'Suppressed, subsonic and about as loud as a chair being moved in the next room. Steady as a bench rest.' },
 
-  { id: 'bishopspiece', name: "Bishop's Piece", cat: 'pistol', lvl: 101, price: 71700000,
-    atk: 268, def: 0, acc: 0.87, heal: 0, effect: null, stock: true,
+  { id: 'bishopspiece', name: "Bishop's Piece", cat: 'pistol', lvl: 101, price: 85300000,
+    atk: 292, def: 0, acc: 0.95, heal: 0, effect: null, stock: true,
     desc: 'Came out of a cathedral safe alongside two passports and a bearer bond. Nobody has ever asked the obvious question.' },
 
   { id: 'thenotary', name: 'The Notary', cat: 'pistol', lvl: 120, price: 230000000,
@@ -3388,16 +3404,16 @@ DATA.items = (DATA.items || []).concat([
      SMG  (5)  levels 70 - 125
      ========================================================== */
 
-  { id: 'papershredder', name: 'Paper Shredder', cat: 'smg', lvl: 70, price: 8310000,
-    atk: 168, def: 0, acc: 0.85, heal: 0, effect: null, stock: true,
+  { id: 'papershredder', name: 'Paper Shredder', cat: 'smg', lvl: 70, price: 8750000,
+    atk: 172, def: 0, acc: 0.85, heal: 0, effect: null, stock: true,
     desc: 'Feeds from the top, empties in a hurry, and leaves behind nothing anybody could put back together.' },
 
-  { id: 'metronome', name: 'The Metronome', cat: 'smg', lvl: 79, price: 17600000,
-    atk: 205, def: 0, acc: 0.90, heal: 0, effect: null, stock: true,
+  { id: 'metronome', name: 'The Metronome', cat: 'smg', lvl: 79, price: 23500000,
+    atk: 224, def: 0, acc: 0.90, heal: 0, effect: null, stock: true,
     desc: 'Six hundred a minute, dead even, never a stumble. You could set a watch by it and one or two people have.' },
 
-  { id: 'hailstorm', name: 'The Hailstorm', cat: 'smg', lvl: 92, price: 44500000,
-    atk: 275, def: 0, acc: 0.84, heal: 0, effect: null, stock: true,
+  { id: 'hailstorm', name: 'The Hailstorm', cat: 'smg', lvl: 92, price: 45600000,
+    atk: 282, def: 0, acc: 0.84, heal: 0, effect: null, stock: true,
     desc: 'Two barrels, one trigger, and a noise on the roof that carries on considerably longer than you expect.' },
 
   { id: 'meatgrinder', name: 'Meat Grinder', cat: 'smg', lvl: 107, price: 144000000,
@@ -3492,25 +3508,38 @@ DATA.items = (DATA.items || []).concat([
   /* ==========================================================
      MEDICAL  (4)
      heal is clamped at your maximum, so 100 is the ceiling and
-     the Private Clinic Suite hit it at level 55. These are the
-     same outcome at four escalating prices, which is the joke.
+     the Private Clinic Suite hit it at level 55. A heal-only item
+     above that line would be STRICTLY DOMINATED by a $300,000
+     one - same effect, more money - so each of these four carries
+     a second, unique payload as well. 30-items.js useItem()
+     applies heal AND effect when an item has both, and no other
+     item in the game has both, so nothing below this line changes.
+
+     The payload is priced off the booster ladder's own law: the
+     regeneration minutes it hands back, times what a minute is
+     worth at that level, times 1.9 for Brave, Will and Attacks
+     and 1.0 for Energy - with $300,000 taken off the top first,
+     because that is what the heal alone is already worth.
+
+       Energy +1 = 3 real minutes   Brave +1 = 5
+       Will   +1 = 12               Attack +1 = 20
      ========================================================== */
 
   { id: 'ambulanceretainer', name: 'Ambulance on Retainer', cat: 'medical', lvl: 72, price: 1050000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'Parked around the corner from wherever you happen to be, engine running and meter running. Gets you upright entirely, which is all anything does.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'energy', amount: 35 }, stock: true,
+    desc: 'Parked around the corner from wherever you happen to be, engine running and meter running. Gets you upright, and then it drives you to wherever you were going.' },
 
   { id: 'surgeonowes', name: 'The Surgeon Who Owes You', cat: 'medical', lvl: 92, price: 4000000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'He lost badly at your table in 1981 and has been paying it back in sutures ever since. Same result as a roll of gauze, reached with far better lighting.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'brave', amount: 11 }, stock: true,
+    desc: 'He lost badly at your table in 1981 and has been paying it back in sutures ever since. Puts you back together and tells you, every time, that you were never in any danger.' },
 
   { id: 'hospitalwing', name: 'A Wing With Your Name Off It', cat: 'medical', lvl: 115, price: 16000000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'You funded the whole floor, they thanked you privately, and there is always a bed made up. Full recovery. So were the bandages.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'will', amount: 7 }, stock: true,
+    desc: 'You funded the whole floor, they thanked you privately, and there is always a bed made up. Nobody wakes you, nobody bills you, and you come off it rested.' },
 
   { id: 'standingorder', name: 'The Standing Order', cat: 'medical', lvl: 145, price: 77000000,
-    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
-    desc: 'Three specialists on salary, a helicopter on a roof and your blood type on ice in four cities. You will be completely fine. You were always going to be.' },
+    atk: 0, def: 0, acc: 0, heal: 100, effect: { stat: 'attacks', amount: 7 }, stock: true,
+    desc: 'Three specialists on salary, a helicopter on a roof and your blood type on ice in four cities. You will be completely fine, and you will be fine again by tonight.' },
 
 
   /* ==========================================================
@@ -10435,27 +10464,44 @@ GAME.items = (function () {
     if (slot === 'wpn') S.player.wpn = null; else S.player.arm = null;
   }
 
+  /* An item may carry BOTH a heal and an effect - the late medical
+     retainers in 15-data-items-hi do - so neither branch returns
+     early. A heal-only item still refuses when you are not hurt;
+     one that also carries an effect is worth using either way. */
   function useItem(id) {
     var it = get(id), p = S.player;
     if (!it || !count(id)) return { err: 'You do not own that.' };
+    var parts = [];
+
     if (it.heal) {
       if (p.hospUntil > NOW()) return { err: 'You are already in a hospital bed.' };
-      if (p.health >= maxHealth(p)) return { err: 'You are not hurt.' };
-      var amt = Math.round(maxHealth(p) * (it.heal / 100));
-      p.health = Math.min(maxHealth(p), p.health + amt);
-      remove(id, 1);
-      return { msg: 'You use the ' + it.name + ' and recover ' + fmt(amt) + ' health.' };
+      if (p.health >= maxHealth(p)) {
+        if (!it.effect) return { err: 'You are not hurt.' };
+      } else {
+        var amt = Math.round(maxHealth(p) * (it.heal / 100));
+        amt = Math.min(amt, maxHealth(p) - p.health);
+        p.health = p.health + amt;
+        parts.push('recover ' + fmt(amt) + ' health');
+      }
     }
+
     if (it.effect) {
       var e = it.effect;
       if (e.stat === 'energy') p.energy = Math.min(p.energyMax, p.energy + e.amount);
       else if (e.stat === 'brave') p.nerve = Math.min(p.nerveMax, p.nerve + e.amount);
       else if (e.stat === 'will') p.will = Math.min(p.willMax, p.will + e.amount);
       else if (e.stat === 'attacks') p.attacks = Math.min(p.attacksMax, p.attacks + e.amount);
-      remove(id, 1);
-      return { msg: 'You use the ' + it.name + '. +' + e.amount + ' ' + e.stat + '.' };
+      else return parts.length ? finish() : { err: 'Nothing happens.' };
+      parts.push('+' + e.amount + ' ' + e.stat);
     }
-    return { err: 'Nothing happens.' };
+
+    if (!parts.length) return { err: 'Nothing happens.' };
+    return finish();
+
+    function finish() {
+      remove(id, 1);
+      return { msg: 'You use the ' + it.name + ' and ' + parts.join(', ') + '.' };
+    }
   }
 
   return {
@@ -13902,7 +13948,7 @@ GAME.normalize = (function () {
     }
     DATA.crimes.sort(function (a, b) { return (a.lvl - b.lvl) || (a.brave - b.brave); });
 
-    /* ---- jobs: authored with an energy cost, paid for in Will ---- */
+    /* ---- jobs: a shift costs Energy ---- */
     DATA.jobs = arr(DATA.jobs);
     for (var j = 0; j < DATA.jobs.length; j++) {
       var jb = DATA.jobs[j];
@@ -13922,6 +13968,7 @@ GAME.normalize = (function () {
        at each level, then decide how many days that level should take.
        Retune the crimes and the curve follows them.
     -------------------------------------------------------------------- */
+    fitJobPay();
     fitLevelCurve();
     fitRankCurve();
 
@@ -14082,6 +14129,89 @@ GAME.normalize = (function () {
     if (!arr(DATA.forum.modNotes).length) DATA.forum.modNotes = ['Thread locked.'];
   }
 
+
+  /* A shift has to be worth less than the crime you could be pulling
+     instead. That is the whole point of jobs: they never fail and never
+     put you inside, so they must never be the better earner. Rather than
+     trust the numbers in the table, the pay is rescaled here against
+     whatever the crime table actually says, which means retuning crimes
+     drags jobs along behind them.
+
+     The target is a share of what a day of crime pays, easing down as the
+     numbers get silly at the top. Energy refills faster than Brave, so
+     per ACTION a top job lands near the fifth of a same-level crime the
+     original game ran at. */
+  function jobShare(L) { return clamp(0.40 - 0.10 * Math.min(1, L / 140), 0.28, 0.40); }
+
+  function typicalLabour(L) { return 40 * Math.pow(Math.max(1, L), 1.25); }
+
+  function crimeCashPerDay(L) {
+    var best = 0;
+    for (var i = 0; i < DATA.crimes.length; i++) {
+      var c = DATA.crimes[i];
+      if ((c.lvl || 1) > L) continue;
+      /* what it pays a player who is comfortably past its level gate */
+      var head = L - (c.lvl || 1);
+      var ch = clamp((c.base || 0.5) + (1 - Math.exp(-head / 9)) * 0.30 + 0.20, 0.05, 0.95);
+      var per = ((c.pay[0] + c.pay[1]) / 2) * ch / Math.max(1, c.brave || 1);
+      if (per > best) best = per;
+    }
+    return best * (24 * 60 / 5);          // Brave is one every five minutes
+  }
+
+  function crimeXPPerDay(L) {
+    var best = 0;
+    for (var i = 0; i < DATA.crimes.length; i++) {
+      var c = DATA.crimes[i];
+      if ((c.lvl || 1) > L) continue;
+      var per = ((c.xp[0] + c.xp[1]) / 2) * 0.78 / Math.max(1, c.brave || 1);
+      if (per > best) best = per;
+    }
+    return best * (24 * 60 / 5);
+  }
+
+  function fitJobPay() {
+    if (!DATA.jobs.length || !DATA.crimes.length) return;
+    for (var i = 0; i < DATA.jobs.length; i++) {
+      var j = DATA.jobs[i];
+      var L = j.lvl || 1;
+      var energy = Math.max(1, j.energy || 1);
+      var actions = (24 * 60 / 3) / energy;                 // Energy is one every three minutes
+      var labMult = 1 + Math.log(1 + typicalLabour(L)) / Math.LN10 * 0.28;
+
+      var wantCash = crimeCashPerDay(L) * jobShare(L);
+      var payNow = (j.pay[0] + j.pay[1]) / 2;
+      if (payNow > 0 && actions > 0) {
+        var scale = wantCash / (actions * payNow * labMult);
+        if (isFinite(scale) && scale > 0) {
+          j.pay = [Math.max(1, Math.round(j.pay[0] * scale)), Math.max(2, Math.round(j.pay[1] * scale))];
+          if (j.pay[1] <= j.pay[0]) j.pay[1] = j.pay[0] + Math.max(1, Math.round(j.pay[0] * 0.25));
+        }
+      }
+
+      /* experience follows the same logic, a touch more generous */
+      var wantXP = crimeXPPerDay(L) * (jobShare(L) + 0.12);
+      var xpNow = (j.xp[0] + j.xp[1]) / 2;
+      if (xpNow > 0 && actions > 0) {
+        var xs = wantXP / (actions * xpNow);
+        if (isFinite(xs) && xs > 0) {
+          j.xp = [Math.max(1, Math.round(j.xp[0] * xs)), Math.max(2, Math.round(j.xp[1] * xs))];
+          if (j.xp[1] <= j.xp[0]) j.xp[1] = j.xp[0] + 1;
+        }
+      }
+    }
+    /* nothing may be strictly worse than a job below it */
+    DATA.jobs.sort(function (a, b) { return (a.lvl - b.lvl) || (a.energy - b.energy); });
+    for (var k = 1; k < DATA.jobs.length; k++) {
+      var prev = DATA.jobs[k - 1], cur = DATA.jobs[k];
+      var pPer = ((prev.pay[0] + prev.pay[1]) / 2) / Math.max(1, prev.energy);
+      var cPer = ((cur.pay[0] + cur.pay[1]) / 2) / Math.max(1, cur.energy);
+      if (cPer <= pPer) {
+        var bump = (pPer * 1.06 * cur.energy) / Math.max(1, (cur.pay[0] + cur.pay[1]) / 2);
+        cur.pay = [Math.round(cur.pay[0] * bump), Math.round(cur.pay[1] * bump)];
+      }
+    }
+  }
 
   /* Best crime / job an account of this level would settle on. */
   function bestCrimeAt(L) {
