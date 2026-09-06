@@ -3277,12 +3277,17 @@ DATA.cities = (DATA.cities || []).concat([
        power = (atk * 1.45 + 2) * acc            (31-combat)
        price = power * PP(L)
 
-   PP(L) is the going rate for one point of power at level L. It
-   is read straight off the existing table below 85 (log-linear
-   between the real rungs: $8.9k at 48, $16.4k at 57, $28.1k at
-   65, $39.8k at 70, $49.6k at 74, $65.3k at 79, $85.8k at 84,
-   $90.9k at 85 - Last Rites) and above 85 it keeps climbing at a
-   rate that decays every single level:
+   PP(L) is the going rate for one point of power at level L.
+   Below 85 it is pinned to the REAL rungs of the existing table -
+   $26.1k at 64 (Last Word), $28.1k at 65 (Stovepipe), $37.7k at
+   69 (The Six Hundred), $46.0k at 71 (Carousel), $74.7k at 76
+   (Kingmaker), $77.5k at 78 (The Foundry), $90.9k at 85 (Last
+   Rites) - and the rungs added here are slotted log-linearly
+   between them: $8.9k at 48, $16.5k at 57, $28.1k at 65, $35.0k
+   at 68, $40.9k at 70, $51.8k at 74, $79.9k at 79, $85.8k at 84.
+   Merged and sorted by level, PP rises monotonically across all
+   104 weapons in the game from level 59 up. Above 85 it keeps
+   climbing at a rate that decays every single level:
 
        PP(L+1) / PP(L) = 1 + 0.0545 - 0.000225 * (L - 85)
 
@@ -3332,10 +3337,16 @@ DATA.cities = (DATA.cities || []).concat([
 
    MEDICAL. heal is a percentage and 30-items.js clamps the result
    at your maximum, so 100 is 100 and the Private Clinic Suite
-   reached the ceiling back at level 55. Everything above it is
-   priced as a luxury good and written as one: the joke is that
-   the four-million-dollar surgeon gets you to exactly the same
-   place as the roll of bandages, only with better parking.
+   reached the ceiling back at level 55. Four more heal-100 items
+   above that line would be four items STRICTLY DOMINATED by a
+   $300,000 one, so each of these carries a second payload as
+   well - Energy, Brave, Will and Attacks in turn, the last of
+   those the only item in the game that hands back an attack.
+   30-items.js useItem() applies heal AND effect when an item has
+   both, which no other item does. Sized off the booster ladder
+   with the $300,000 the heal is already worth taken off the top
+   first, so the retainer is a luxury that is finally worth its
+   price rather than a joke at the buyer's expense.
 
    BOOSTERS stay loss-making. Priced at the time-value of the
    resource they hand back - minutes of regeneration times what a
@@ -3343,6 +3354,14 @@ DATA.cities = (DATA.cities || []).concat([
    times 1.0 for Energy, which is the ratio the base table already
    uses. Amounts are sized to fill the bar at their unlock level
    and no further, because 30-items.js clamps the overflow.
+
+   NOTHING IN THIS FILE IS STRICTLY DOMINATED. Because damage is
+   acc * (str * 0.115 + atk * 1.45 + 2), one weapon beats another
+   at EVERY Strength only when it has both the higher accuracy and
+   the higher power, so the test that matters is: no cheaper
+   weapon at or below this level has both. Every one of the 24
+   passes it, and so does every suit, every retainer and every
+   booster on its own axis.
    ============================================================ */
 
 DATA.items = (DATA.items || []).concat([
@@ -10471,17 +10490,17 @@ GAME.items = (function () {
   function useItem(id) {
     var it = get(id), p = S.player;
     if (!it || !count(id)) return { err: 'You do not own that.' };
-    var parts = [];
+    var msg = '', did = false;
 
     if (it.heal) {
       if (p.hospUntil > NOW()) return { err: 'You are already in a hospital bed.' };
       if (p.health >= maxHealth(p)) {
         if (!it.effect) return { err: 'You are not hurt.' };
       } else {
-        var amt = Math.round(maxHealth(p) * (it.heal / 100));
-        amt = Math.min(amt, maxHealth(p) - p.health);
+        var amt = Math.min(Math.round(maxHealth(p) * (it.heal / 100)), maxHealth(p) - p.health);
         p.health = p.health + amt;
-        parts.push('recover ' + fmt(amt) + ' health');
+        msg += ' You recover ' + fmt(amt) + ' health.';
+        did = true;
       }
     }
 
@@ -10491,17 +10510,15 @@ GAME.items = (function () {
       else if (e.stat === 'brave') p.nerve = Math.min(p.nerveMax, p.nerve + e.amount);
       else if (e.stat === 'will') p.will = Math.min(p.willMax, p.will + e.amount);
       else if (e.stat === 'attacks') p.attacks = Math.min(p.attacksMax, p.attacks + e.amount);
-      else return parts.length ? finish() : { err: 'Nothing happens.' };
-      parts.push('+' + e.amount + ' ' + e.stat);
+      if (e.stat === 'energy' || e.stat === 'brave' || e.stat === 'will' || e.stat === 'attacks') {
+        msg += ' +' + e.amount + ' ' + e.stat + '.';
+        did = true;
+      }
     }
 
-    if (!parts.length) return { err: 'Nothing happens.' };
-    return finish();
-
-    function finish() {
-      remove(id, 1);
-      return { msg: 'You use the ' + it.name + ' and ' + parts.join(', ') + '.' };
-    }
+    if (!did) return { err: 'Nothing happens.' };
+    remove(id, 1);
+    return { msg: 'You use the ' + it.name + '.' + msg };
   }
 
   return {

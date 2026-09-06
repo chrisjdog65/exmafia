@@ -178,6 +178,7 @@ version here is invented; and the Notice Board has no precedent at all — it ex
 
 ```
 node tools/build.js       # src/  ->  exmafia.html
+node tools/check-build.js # fails if exmafia.html is stale relative to src/
 node tools/smoke.js       # boot, visit all 41 routes, save, reload
 node tools/paths.js       # exercise every interaction path end to end
 node tools/deep.js        # long-run world simulation and state integrity
