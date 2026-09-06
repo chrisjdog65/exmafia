@@ -221,10 +221,12 @@ function record(page) {
   console.log('  after reload: ' + JSON.stringify(after));
   if (after.splash) errors.push('PERSISTENCE: save did not restore, splash shown again');
 
-  await page.screenshot({ path: path.resolve(__dirname, '..', 'shot-city.png'), fullPage: false });
+  const shots = path.resolve(__dirname, '..', 'out');
+  require('fs').mkdirSync(shots, { recursive: true });
+  await page.screenshot({ path: path.join(shots, 'city.png'), fullPage: false });
   await page.evaluate(() => { window.location.hash = '#/ladder'; });
   await page.waitForTimeout(400);
-  await page.screenshot({ path: path.resolve(__dirname, '..', 'shot-ladder.png'), fullPage: false });
+  await page.screenshot({ path: path.join(shots, 'ladder.png'), fullPage: false });
 
   console.log('\nERRORS: ' + errors.length);
   errors.slice(0, 40).forEach(e => console.log('  * ' + e.slice(0, 400)));

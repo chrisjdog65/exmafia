@@ -163,6 +163,10 @@ GAME.player = (function () {
   function jail(ms, why, bail) {
     var p = S.player;
     if (GAME.lawyer.onRetainer()) ms = Math.round(ms * 0.5);
+    /* The bounds are a knob in the back office, so they have to actually
+       bind - CFG.JAIL_MAX was documented in the crime tables and read by
+       nothing. Hospital time has always been clamped this way. */
+    ms = clamp(ms, CFG.JAIL_MIN, CFG.JAIL_MAX);
     p.jailUntil = Math.max(p.jailUntil, NOW() + ms);
     p.jailWhy = why || '';
     p.bail = bail || Math.round(ms / 1000 * 55 * (1 + p.level * 0.3));

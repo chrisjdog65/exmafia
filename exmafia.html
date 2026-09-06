@@ -653,7 +653,7 @@ var CFG = {
   HOSP_MIN: 3 * MIN,
   HOSP_MAX: 75 * MIN,
   JAIL_MIN: 2 * MIN,
-  JAIL_MAX: 60 * MIN,
+  JAIL_MAX: 90 * MIN,       // the deepest crimes in the table reach for all of it
   MUG_FRACTION: 0.18,       // share of a loser's CARRIED cash a mugger takes
   DROP_CHANCE: 0.22,
   NEWBIE_LEVEL: 5,          // nobody may attack an account under this level
@@ -3042,21 +3042,39 @@ DATA.cities = [
    x2.11 on top. Both of those have to come out before any
    comparison means anything.
 
-   Headline pay is 0.28x-0.39x of the same-level crime, which is
-   the band the old table already ran at. Once the Energy cost,
-   the Labour multiplier and the crime's own failure rate are all
-   divided out, a job earner clears 94-105% of what a crime earner
-   clears at the same level - the same near-parity the old table
-   holds from level 48 up (96-106%), and the reason to commit a
-   crime instead is mastery, drops and the fact that jobs cap out
-   flat while a crime pays a city bonus. XP lands in the same
-   band. The Energy costs are set FROM those ratios, which is why
-   they jump where they do rather than climbing one a rung.
+   THE PAY AND XP FIGURES BELOW ARE SEEDS, NOT FINAL NUMBERS.
+   45-normalize fitJobPay() rescales every job in the game at boot
+   against whatever the crime table actually says, so retuning a
+   crime drags the jobs along behind it and no hand-tuned number
+   here can drift out of line. What survives from the literals in
+   this file is the SHAPE - the spread between pay[0] and pay[1],
+   and each job's size relative to its neighbours. What decides
+   the level is fitJobPay's own target:
+
+     share(L) = 0.40 - 0.10 * min(1, L / 140), floored at 0.28
+
+   of a day of same-level crime, with the Energy cost, the Labour
+   multiplier and the crime's own failure rate all divided out
+   first. Measured on the built file, a shift lands at 22-27% of
+   a day of crime across all ten of these and 20-26% per action -
+   the "roughly a fifth" the original game ran at - and the join
+   is invisible: 25% at Consigliere (74, old) into 24% at Bonding
+   Agent (80, new).
+
+   THE ENERGY COSTS ARE REAL, AND THEY ARE THE LEVER. fitJobPay
+   divides by j.energy, so these ten numbers set how much of the
+   day a shift eats and therefore what the pay is solved to. The
+   old table had already reached 22 Energy by level 74, so this
+   ladder starts at 14 and climbs to 34 rather than restarting at
+   the bottom; that is why it jumps where it does instead of
+   climbing one a rung.
 
    pay/Energy and xp/Energy both rise strictly with level across
-   every job from level 10 up, including where these ten interleave
-   with the old ones at 55, 66 and 71. Nothing here dominates a job
-   below it.
+   every job from level 10 up - fitJobPay runs a final pass that
+   guarantees it - including where these ten interleave with the
+   old ones at 55, 66 and 71. Nothing here dominates a job below
+   it, and nothing here out-earns the crime you could be pulling
+   instead.
 
    ------------------------------------------------------------
    CITIES - four more hops off the frontier
@@ -11641,6 +11659,10 @@ GAME.player = (function () {
   function jail(ms, why, bail) {
     var p = S.player;
     if (GAME.lawyer.onRetainer()) ms = Math.round(ms * 0.5);
+    /* The bounds are a knob in the back office, so they have to actually
+       bind - CFG.JAIL_MAX was documented in the crime tables and read by
+       nothing. Hospital time has always been clamped this way. */
+    ms = clamp(ms, CFG.JAIL_MIN, CFG.JAIL_MAX);
     p.jailUntil = Math.max(p.jailUntil, NOW() + ms);
     p.jailWhy = why || '';
     p.bail = bail || Math.round(ms / 1000 * 55 * (1 + p.level * 0.3));

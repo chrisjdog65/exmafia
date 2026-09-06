@@ -55,7 +55,7 @@ var CFG = {
   HOSP_MIN: 3 * MIN,
   HOSP_MAX: 75 * MIN,
   JAIL_MIN: 2 * MIN,
-  JAIL_MAX: 60 * MIN,
+  JAIL_MAX: 90 * MIN,       // the deepest crimes in the table reach for all of it
   MUG_FRACTION: 0.18,       // share of a loser's CARRIED cash a mugger takes
   DROP_CHANCE: 0.22,
   NEWBIE_LEVEL: 5,          // nobody may attack an account under this level
