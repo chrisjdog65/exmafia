@@ -149,7 +149,13 @@ GAME.ladder = (function () {
      two days old, whichever protection lasts longer. Newbies may still
      attack - the shield only points one way. */
   function isNewbie(e) {
-    return (e.level || 1) < CFG.NEWBIE_LEVEL || (NOW() - (e.joined || 0)) < CFG.NEWBIE_HOURS * HOUR;
+    if (CFG.NEWBIE_LEVEL > 0 && (e.level || 1) < CFG.NEWBIE_LEVEL) return true;
+    /* The two-day shield is for people who joined a round already in
+       progress. At the start of a round everybody signed up together, so
+       nobody is shielded by it and the ladder is live from the first hour. */
+    var roundAge = NOW() - (S.seasonStart || S.createdAt || 0);
+    if (roundAge < CFG.NEWBIE_HOURS * HOUR) return false;
+    return (NOW() - (e.joined || 0)) < CFG.NEWBIE_HOURS * HOUR;
   }
 
   function canAttack(targetId) {
@@ -382,6 +388,7 @@ GAME.ladder = (function () {
       t.health = Math.max(1, Math.round(maxHealth(t) * 0.12));
       GAME.feed.newsFrom('mug', 'atk', { attacker: p.name, defender: t.name, amount: money(take), city: t.city });
       GAME.feed.log('win', 'You mugged ' + money(take) + ' off ' + t.name + '. (+' + out.xp + ' xp)');
+      GAME.contracts.note('mugged', { id: t.id, amount: take });
       GAME.npc.remember(t, 'mugged_by_player', { amount: take });
       if (chance(CFG.DROP_CHANCE)) {
         var drops = GAME.items.all().filter(function (i) { return i.cat === 'drop'; });
@@ -396,6 +403,7 @@ GAME.ladder = (function () {
       p.str = Math.round((p.str + out.str) * 100) / 100;
       p.def = Math.round((p.def + out.def) * 100) / 100;
       GAME.feed.newsFrom('hospital', 'atk', { attacker: p.name, defender: t.name, city: t.city, n: Math.round(out.hosp / MIN) });
+      GAME.contracts.note('hospitalised', { id: t.id });
       GAME.feed.log('win', 'You put ' + t.name + ' in a bed for ' + Math.round(out.hosp / MIN) +
         ' minutes. +0.6 Strength, +0.6 Guard, +' + out.xp + ' xp.');
       GAME.npc.remember(t, 'hospitalised_by_player', {});
@@ -461,6 +469,7 @@ GAME.ladder = (function () {
         } else {
           def.hospUntil = NOW() + hospTime(res.dmgDealt * 1.7, def);
           def.hospWhy = 'Hospitalised by ' + att.name;
+          GAME.contracts.note('hospitalised', { id: def.id });
           def.health = 1;
           att.str = Math.round((att.str + 0.6 + rnd()) * 100) / 100;
           att.def = Math.round((att.def + 0.5 + rnd() * 0.8) * 100) / 100;
@@ -557,9 +566,13 @@ GAME.ladder = (function () {
      fortnight means something.
   -------------------------------------------------------------------- */
   function npcChallengeTick(hours) {
+    /* 18% of game-hours, and `hours` may be a fraction of one. Callers pass
+       elapsed game time; this works out how many challenges that buys. */
+    var expected = Math.max(0, hours) * 0.18;
+    var n = Math.floor(expected);
+    if (chance(expected - n)) n++;
     var fired = 0;
-    for (var h = 0; h < Math.min(hours, 400); h++) {
-      if (!chance(0.18)) continue;
+    for (var h = 0; h < Math.min(n, 600); h++) {
       var l = roster();
       var challenger = null, targetRung = 0;
       if (chance(0.6)) {

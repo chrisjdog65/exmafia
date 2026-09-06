@@ -19,6 +19,7 @@ PAGES.city = function () {
   h += '</div></div>';
 
   h += firstSteps();
+  h += thePack();
   h += '<div class="box"><h3>Where To</h3><div class="bd">' + quickGrid() + '</div></div>';
 
   h += '<div class="box"><h3>Your Numbers</h3><div class="bd"><div class="pgrid">' +
@@ -41,6 +42,44 @@ PAGES.city = function () {
 };
 
 function row(k, v) { return '<div class="prow"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+
+/* Everybody in this city started on the same day at level one, you
+   included. This is where you are in that crowd. */
+function thePack() {
+  var p = S.player;
+  var alive = [];
+  for (var i = 0; i < S.npcs.length; i++) if (!S.npcs[i].dead) alive.push(S.npcs[i]);
+  if (!alive.length) return '';
+  var field = alive.concat([p]).sort(function (a, b) { return (b.xp || 0) - (a.xp || 0); });
+  var place = field.indexOf(p) + 1;
+  var pct = Math.round((1 - (place - 1) / field.length) * 100);
+
+  /* the two people either side of you, which is who you actually race */
+  var idx = place - 1;
+  var near = [];
+  for (var k = Math.max(0, idx - 2); k <= Math.min(field.length - 1, idx + 2); k++) near.push({ e: field[k], place: k + 1 });
+
+  var lvls = alive.map(function (n) { return n.level; }).sort(function (a, b) { return a - b; });
+  var med = lvls[Math.floor(lvls.length / 2)];
+  var top = lvls[lvls.length - 1];
+  var days = Math.max(1, Math.round((NOW() - (S.seasonStart || S.createdAt)) / DAY));
+
+  var h = '<div class="box"><h3>The Pack<span class="sub">day ' + days + ' of the round</span></h3><div class="bd">' +
+    '<p class="dim">Everybody here signed up the same day you did, at level one, and has been playing ever since. ' +
+    'You are <b class="warn">' + ordinal(place) + '</b> of ' + field.length + ' &mdash; ahead of ' + pct + '% of the city. ' +
+    'The middle of the pack is level <b>' + med + '</b>; the front of it is level <b>' + top + '</b>.</p>' +
+    '<table class="t"><tr><th class="c">#</th><th>Player</th><th class="c">Lvl</th><th class="r">Experience</th><th class="c">Rung</th></tr>';
+  for (var j = 0; j < near.length; j++) {
+    var e = near[j].e, me = e.id === 0;
+    h += '<tr' + (me ? ' style="background:#241a12"' : '') + '><td class="c dim">' + near[j].place + '</td>' +
+      '<td>' + (me ? '<b class="warn">' + esc(e.name) + ' (you)</b>' : GAME.ui.userLink(e)) + '</td>' +
+      '<td class="c">' + e.level + '</td>' +
+      '<td class="r">' + fmtShort(e.xp || 0) + '</td>' +
+      '<td class="c dim">' + (GAME.ladder.rungOf(e.id) || '&mdash;') + '</td></tr>';
+  }
+  h += '</table></div></div>';
+  return h;
+}
 
 /* The first hour is the one that loses people. Two hundred accounts got
    here first and every one of them can flatten a man with no weapon, so
@@ -77,6 +116,8 @@ function quickGrid() {
     ['ladder', 'Attack Ladder', 'Twenty rungs. Ten points an hour.'],
     ['players', 'Find someone to hit', 'Browse who is online'],
     ['gym', 'Train', 'Energy buys the set, Will multiplies it'],
+    ['board', 'Take a job off the board', 'Work the others want doing'],
+    ['oc', 'Put a crew together', 'Family jobs, one player to a role'],
     ['jobs', 'Work a shift', 'Spend Energy for safe money'],
     ['streets', 'Go for a walk', 'Spend Energy, see what turns up']
   ];

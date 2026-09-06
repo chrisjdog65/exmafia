@@ -4,10 +4,20 @@
 
 GAME.progress = (function () {
 
+  /* The fitted table runs to a few hundred levels. Past the end of it the
+     curve is extrapolated from its own final slope, so nobody ever hits a
+     wall - there is no level cap in this game. */
   function xpForLevel(lv) {
     var t = (DATA.levels && DATA.levels.table) || null;
-    if (t && t[lv - 1] !== undefined) return t[lv - 1];
-    return Math.round(110 * Math.pow(lv - 1, 2.42) + (lv - 1) * 60);
+    if (!t || !t.length) return Math.round(110 * Math.pow(lv - 1, 2.42) + (lv - 1) * 60);
+    if (lv <= t.length) return t[lv - 1];
+    var last = t[t.length - 1];
+    var gap = last - t[t.length - 2];
+    var growth = gap / (t[t.length - 2] - t[t.length - 3]);
+    if (!isFinite(growth) || growth < 1.001) growth = 1.02;
+    var over = lv - t.length, total = last;
+    for (var i = 0; i < over && i < 4000; i++) { gap *= growth; total += gap; }
+    return Math.round(total);
   }
 
   function rankFor(xp) {
@@ -31,14 +41,16 @@ GAME.progress = (function () {
     return (DATA.levels && DATA.levels.perLevel) || { energy: 2, will: 1, brave: 0.34, health: 12, attacks: 0.06 };
   }
 
+  function cap(v, c) { return (c && c > 0) ? Math.min(c, v) : v; }
+
   function applyLevel(p) {
-    var lv = p.level - 1, C = CFG.CAP;
-    p.energyMax = Math.min(C.energy, Math.round(30 + 2.05 * lv));
-    p.willMax = Math.min(C.will, Math.round(12 + 0.98 * lv));
-    p.nerveMax = Math.min(C.nerve, Math.round(5 + 0.35 * lv));
-    p.dexgMax = Math.min(C.dexg, Math.round(20 + 0.60 * lv));
-    p.healthMax = Math.min(C.health, Math.round(100 + 12.25 * lv));
-    p.attacksMax = Math.min(C.attacks, Math.round(5 + 0.07 * lv));
+    var lv = p.level - 1, C = CFG.CAP || {};
+    p.energyMax = cap(Math.round(30 + 2.05 * lv), C.energy);
+    p.willMax = cap(Math.round(12 + 0.98 * lv), C.will);
+    p.nerveMax = cap(Math.round(5 + 0.35 * lv), C.nerve);
+    p.dexgMax = cap(Math.round(20 + 0.60 * lv), C.dexg);
+    p.healthMax = cap(Math.round(100 + 12.25 * lv), C.health);
+    p.attacksMax = cap(Math.round(5 + 0.07 * lv), C.attacks);
     if (p.dexg === undefined) p.dexg = p.dexgMax;
   }
 
@@ -46,7 +58,8 @@ GAME.progress = (function () {
     var p = S.player;
     p.xp += Math.max(0, Math.round(n));
     var before = p.level, leveled = [];
-    while (p.level < 100 && p.xp >= xpForLevel(p.level + 1)) {
+    var ceiling = CFG.MAX_LEVEL > 0 ? CFG.MAX_LEVEL : 100000;
+    while (p.level < ceiling && p.xp >= xpForLevel(p.level + 1) && leveled.length < 400) {
       p.level++;
       leveled.push(p.level);
     }

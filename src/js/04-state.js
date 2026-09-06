@@ -90,8 +90,8 @@ GAME.state = (function () {
      drifts up to the middle of the ladder and a new player has nobody
      they can beat. */
   function playedFraction(p) {
-    var played = clamp(gauss(0.06 + p.activity * 0.72, 0.2), 0.004, 1);
-    if (chance(0.34)) played *= rflt(0.02, 0.2);      // came, saw, left
+    var played = clamp(gauss(0.22 + p.activity * 0.68, 0.2), 0.02, 1);
+    if (chance(0.18)) played *= rflt(0.15, 0.5);      // came, saw, drifted
     return played;
   }
   function effectiveDays(p, ageDays, played) {
@@ -99,7 +99,11 @@ GAME.state = (function () {
     return Math.max(0, ageDays * played * capture * rflt(0.6, 1.35));
   }
 
-  function makeNPC(id, usedNames, now) {
+  /* fresh = a brand new round: everybody signs up on the same day at level
+     one and grinds up together, which is how an exMafia round actually
+     started. The alternative builds an established world with years of
+     history already in it; the admin panel can regenerate either. */
+  function makeNPC(id, usedNames, now, fresh) {
     var arch = pickArchetype();
     var p = personality(arch);
     var name = null, guard = 0;
@@ -113,29 +117,42 @@ GAME.state = (function () {
     var city = pick(DATA.names.cities);
     var tz = pickW(TZ_POOL.map(function (t) { return [t[0], t[1]]; }));
 
-    /* Account age: a real roster is a long tail of veterans plus a
-       fat cluster of people who signed up in the last month. */
-    var ageDays = pickW([[rflt(0, 30), 34], [rflt(30, 120), 26], [rflt(120, 400), 22], [rflt(400, 1100), 18]]);
+    /* Account age: on a fresh round everybody signed up today. Otherwise a
+       real roster is a long tail of veterans over a fat cluster of people
+       who joined in the last month. */
+    var ageDays = fresh ? 0 : pickW([[rflt(0, 30), 34], [rflt(30, 120), 26], [rflt(120, 400), 22], [rflt(400, 1100), 18]]);
     var joined = now - ageDays * DAY;
 
     /* Where this account has actually got to, from how long it has been
        here and how hard it plays. Same curve the live game runs on. */
     var played = playedFraction(p);
-    var effDays = effectiveDays(p, ageDays, played) * (0.5 + arch.growth);
-    var level = clamp(GAME.progress.levelForDays(effDays), 1, 100);
+    var effDays = fresh ? 0 : effectiveDays(p, ageDays, played) * (0.5 + arch.growth);
+    var level = fresh ? 1 : Math.max(1, GAME.progress.levelForDays(effDays));
 
-    /* Gym time is whatever Energy was left after the fighting. */
-    var setsTotal = effDays * 96 * clamp(1 - p.aggro * 0.7, 0.15, 1) * clamp(0.3 + p.skill * 0.8, 0.2, 1);
-    var gymMult = clamp(1 + p.skill * 4.5 * Math.min(1, level / 45), 1, 6.5);
-    var st = {
-      str: statFromSets(setsTotal * rflt(0.18, 0.38), gymMult, level),
-      def: statFromSets(setsTotal * rflt(0.15, 0.34), gymMult, level),
-      spd: statFromSets(setsTotal * rflt(0.10, 0.28), gymMult, level),
-      dex: statFromSets(setsTotal * rflt(0.08, 0.24), gymMult, level)
-    };
+    var st;
+    if (fresh) {
+      /* Everybody off the same line. The small spread is the difference
+         between two people who both just signed up, and it is the only
+         thing separating them until they start playing. */
+      st = {
+        str: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100,
+        def: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100,
+        spd: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100,
+        dex: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100
+      };
+    } else {
+      var setsTotal = effDays * 96 * clamp(1 - p.aggro * 0.7, 0.15, 1) * clamp(0.3 + p.skill * 0.8, 0.2, 1);
+      var gymMult = clamp(1 + p.skill * 4.5 * Math.min(1, level / 45), 1, 6.5);
+      st = {
+        str: statFromSets(setsTotal * rflt(0.18, 0.38), gymMult, level),
+        def: statFromSets(setsTotal * rflt(0.15, 0.34), gymMult, level),
+        spd: statFromSets(setsTotal * rflt(0.10, 0.28), gymMult, level),
+        dex: statFromSets(setsTotal * rflt(0.08, 0.24), gymMult, level)
+      };
+    }
 
-    var hp = 100 + level * 12;
-    var money = Math.round(Math.pow(level, 2.35) * (18 + p.greed * 90) * rflt(0.35, 2.4));
+    var hp = Math.round(100 + (level - 1) * 12.25);
+    var money = fresh ? rint(300, 800) : Math.round(Math.pow(level, 2.35) * (18 + p.greed * 90) * rflt(0.35, 2.4));
 
     var n = {
       id: id,
@@ -156,7 +173,7 @@ GAME.state = (function () {
       level: level,
       xp: 0,   /* set from the level table just below */
       money: money,
-      bank: Math.round(money * rflt(0.4, 6) * p.patience),
+      bank: fresh ? 0 : Math.round(money * rflt(0.4, 6) * p.patience),
       str: st.str, def: st.def, spd: st.spd, dex: st.dex,
       healthMax: hp,
       health: Math.round(hp * rflt(0.55, 1)),
@@ -177,9 +194,8 @@ GAME.state = (function () {
 
       fam: null, famRole: 'soldier',
       bounty: 0,
-      points: rint(0, 400),
-      iq: Math.round(10 + rflt(0, 1) * 40),
-      lab: Math.round(10 + rflt(0, 1) * 30),
+      points: fresh ? rint(0, 25) : rint(0, 400),
+      iq: fresh ? 10 : Math.round(10 + rflt(0, 1) * 40),
       bgUntil: 0,
       respect: Math.round(Math.pow(level, 1.5) * rflt(0.5, 2.2)),
 
@@ -201,12 +217,12 @@ GAME.state = (function () {
       rivals: {},
       pals: {},
 
-      w: Math.round(Math.pow(level, 1.7) * rflt(0.4, 3) * (0.4 + p.aggro)),
-      l: Math.round(Math.pow(level, 1.6) * rflt(0.4, 2.6)),
-      crimes: Math.round(Math.pow(level, 2.1) * rflt(1, 4)),
-      busts: Math.round(Math.pow(level, 1.2) * rflt(0, 3)),
-      posts: Math.round(Math.pow(level, 1.3) * rflt(0.2, 6) * (0.2 + p.chatty)),
-      friends: rint(0, 60),
+      w: fresh ? 0 : Math.round(Math.pow(level, 1.7) * rflt(0.4, 3) * (0.4 + p.aggro)),
+      l: fresh ? 0 : Math.round(Math.pow(level, 1.6) * rflt(0.4, 2.6)),
+      crimes: fresh ? 0 : Math.round(Math.pow(level, 2.1) * rflt(1, 4)),
+      busts: fresh ? 0 : Math.round(Math.pow(level, 1.2) * rflt(0, 3)),
+      posts: fresh ? 0 : Math.round(Math.pow(level, 1.3) * rflt(0.2, 6) * (0.2 + p.chatty)),
+      friends: fresh ? rint(0, 4) : rint(0, 60),
 
       sig: pick(DATA.names.signatures),
       bio: pick(DATA.names.bios),
@@ -219,9 +235,9 @@ GAME.state = (function () {
     };
     /* XP has to agree with the level table or nobody ever ranks up */
     var floorXP = GAME.progress.xpForLevel(n.level);
-    var nextXP = GAME.progress.xpForLevel(Math.min(100, n.level + 1));
-    n.xp = Math.round(floorXP + (nextXP - floorXP) * rflt(0, 0.92));
-    n.respect = Math.round(Math.pow(n.level, 1.5) * rflt(0.5, 2.2));
+    var nextXP = GAME.progress.xpForLevel(n.level + 1);
+    n.xp = fresh ? rint(0, 30) : Math.round(floorXP + (nextXP - floorXP) * rflt(0, 0.92));
+    n.respect = fresh ? 0 : Math.round(Math.pow(n.level, 1.5) * rflt(0.5, 2.2));
     n.gear = Math.round((n.str + n.def) * rflt(0.05, 0.45) * (0.4 + p.greed));
     return n;
   }
@@ -308,8 +324,9 @@ GAME.state = (function () {
 
     var used = {};
     used[String(opts.name).toLowerCase()] = 1;
+    var fresh = opts.established ? false : true;
     var npcs = [];
-    for (var i = 1; i <= CFG.NPC_COUNT; i++) npcs.push(makeNPC(i, used, now));
+    for (var i = 1; i <= CFG.NPC_COUNT; i++) npcs.push(makeNPC(i, used, now, fresh));
 
     var player = {
       id: 0,
@@ -341,7 +358,7 @@ GAME.state = (function () {
       bounty: 0,
       respect: 0,
       points: 25,
-      iq: 10, lab: 10,
+      iq: 10,
       bgUntil: 0,
       ladderLock: 0, lastFightAt: 0, bestLadderRung: 0,
       truckKit: {}, goodsUnits: 0,
@@ -387,7 +404,9 @@ GAME.state = (function () {
       nextMailId: 1,
       nextMktId: 1,
       counters: { day: 0, simSteps: 0 },
-      flags: { tutorialSeen: false },
+      flags: { tutorialSeen: false, freshRound: fresh },
+      seasonStart: now,
+      roundNo: 1,
       settings: { pace: 1, chatOn: true, newsOn: true, sfx: false, confirmAttack: true, compact: false }
     };
 
@@ -397,16 +416,17 @@ GAME.state = (function () {
     for (var z = 0; z < ladder.length; z++) {
       var lm = byId(ladder[z]);
       if (!lm) continue;
-      lm.lastFightAt = now - Math.round(rflt(0.2, 2.4) * DAY * (1.3 - lm.p.activity));
-      lm.rungSince = now - Math.round(rflt(1, 40) * DAY);
+      lm.lastFightAt = fresh ? now : now - Math.round(rflt(0.2, 2.4) * DAY * (1.3 - lm.p.activity));
+      lm.rungSince = fresh ? now : now - Math.round(rflt(1, 40) * DAY);
     }
     GAME.ladder.sync();
 
-    GAME.items.equipNPCs();
+    if (!fresh) GAME.items.equipNPCs();
     GAME.forumSim.seed(now);
     GAME.market.seed(now);
     GAME.points.seedMarket(now);
     GAME.auction.seed(now);
+    GAME.contracts.seed(now);
     GAME.sim.seedHistory(now);
     GAME.mail.system('welcome', {});
 
@@ -430,7 +450,8 @@ GAME.state = (function () {
     if (obj.player.points === undefined) obj.player.points = 10;
     if (obj.player.dexg === undefined) { obj.player.dexg = 20; obj.player.dexgMax = 20; }
     if (obj.player.iq === undefined) obj.player.iq = 10;
-    if (obj.player.lab === undefined) obj.player.lab = 10;
+    /* Labour used to live in its own field before it was folded into dex */
+    if (obj.player.lab !== undefined) { obj.player.dex = Math.max(obj.player.dex || 10, obj.player.lab); delete obj.player.lab; }
     if (obj.player.truckKit === undefined) obj.player.truckKit = {};
     if (obj.player.goodsUnits === undefined) obj.player.goodsUnits = 0;
     if (obj.player.school === undefined) obj.player.school = null;

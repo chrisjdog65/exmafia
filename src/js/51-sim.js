@@ -68,36 +68,32 @@ GAME.sim = (function () {
     S.counters.day = day;
     S.player.st.daysActive = (S.player.st.daysActive || 1) + 1;
 
+    /* People do drift away, but slowly - most of the roster you meet on day
+       one is still here months later, levelling alongside you. */
     var quits = 0;
     for (var i = 0; i < S.npcs.length; i++) {
       var n = S.npcs[i];
       if (n.dead) continue;
       var idleDays = (now - n.lastOnline) / DAY;
-      var q = 0.0016 + (1 - n.p.activity) * 0.010 + (1 - n.p.patience) * 0.005;
-      if (idleDays > 6) q += 0.05;
-      if (idleDays > 20) q += 0.22;
-      if (n.level < 6) q += 0.012;
+      var q = 0.0004 + (1 - n.p.activity) * 0.0022 + (1 - n.p.patience) * 0.0012;
+      if (idleDays > 14) q += 0.012;
+      if (idleDays > 45) q += 0.06;
       if (chance(q)) {
         n.dead = true; n.online = false; quits++;
         GAME.feed.newsFrom('logout', 'presence', { who: n.name, city: n.city });
       }
     }
 
-    /* replacements sign up at the bottom */
-    var joins = quits + (chance(0.5) ? rint(0, 2) : 0);
+    /* one in, one out: the city is always CFG.NPC_COUNT strong */
+    var living = 0;
+    for (var lv = 0; lv < S.npcs.length; lv++) if (!S.npcs[lv].dead) living++;
+    var joins = Math.max(0, CFG.NPC_COUNT - living);
     var used = {};
     for (var u = 0; u < S.npcs.length; u++) used[S.npcs[u].name.toLowerCase()] = 1;
     used[S.player.name.toLowerCase()] = 1;
     for (var j = 0; j < joins; j++) {
-      var fresh = GAME.state.makeNPC(S.nextNpcId++, used, now);
-      /* brand new accounts really are brand new */
+      var fresh = GAME.state.makeNPC(S.nextNpcId++, used, now, true);
       fresh.joined = now;
-      fresh.level = rint(1, 3);
-      fresh.xp = rint(0, 400);
-      fresh.str = rint(9, 18); fresh.def = rint(9, 18); fresh.spd = rint(9, 18); fresh.dex = rint(9, 18);
-      fresh.money = rint(200, 3000); fresh.bank = 0;
-      fresh.healthMax = 100 + (fresh.level - 1) * 12; fresh.health = fresh.healthMax;
-      fresh.wpn = null; fresh.arm = null; fresh.gear = 0;
       fresh.rung = 0;                     // nobody starts on the Attack Ladder
       fresh.w = 0; fresh.l = 0; fresh.crimes = rint(0, 12); fresh.posts = 0;
       fresh.fam = null;
@@ -105,12 +101,12 @@ GAME.sim = (function () {
       GAME.feed.news('presence', '{who} signed up. Somebody get the kid a drink.', { who: fresh.name });
     }
 
-    /* An account that stopped logging in months ago eventually gets purged.
-       If it was holding a rung, the strongest name outside the twenty moves
-       up into the empty slot - the ladder is never short. */
+    /* An account that stopped logging in eventually gets purged. If it was
+       holding a rung, the strongest name outside the twenty moves up into
+       the empty slot - the ladder is never short. */
     for (var d = S.npcs.length - 1; d >= 0; d--) {
       var e = S.npcs[d];
-      if (!e.dead || (now - e.lastOnline) < 45 * DAY) continue;
+      if (!e.dead || (now - e.lastOnline) < 21 * DAY) continue;
       var li = S.ladder.indexOf(e.id);
       if (li >= 0) S.ladder.splice(li, 1);
       S.npcs.splice(d, 1);
@@ -244,11 +240,13 @@ GAME.sim = (function () {
 
     GAME.mail.tick(now);
     GAME.forumSim.tick(now);
-    /* 18% of game-hours a challenge fires somewhere on the ladder */
-    if (chance(0.18 / 3600)) GAME.ladder.npcChallengeTick(1);
+    /* the ladder fights over itself in real time too */
+    GAME.ladder.npcChallengeTick(CFG.UI_TICK / HOUR);
     if (chance(0.12)) GAME.market.tick(now);
     if (chance(0.05)) GAME.points.tickMarket(now);
     if (chance(0.10)) GAME.auction.tick(now);
+    if (chance(0.02)) GAME.contracts.tick(now);
+    GAME.oc.npcTick(CFG.UI_TICK / HOUR);
     flavor(now);
     churn(now);
 
@@ -332,10 +330,12 @@ GAME.sim = (function () {
         if (who) GAME.npc.act(who, t);
       }
 
-      if (chance(0.18 * stepMin / 60)) GAME.ladder.npcChallengeTick(1);
+      GAME.ladder.npcChallengeTick(stepMin / 60);
       if (chance(0.4)) GAME.market.tick(t);
       if (chance(0.2)) GAME.points.tickMarket(t);
       if (chance(0.5)) GAME.auction.tick(t);
+      if (chance(0.4)) GAME.contracts.tick(t);
+      GAME.oc.npcTick(stepMin / 60);
       if (chance(0.5)) GAME.forumSim.tick(t);
       GAME.mail.tick(t);
       if (chance(0.35)) flavor(t);
@@ -409,7 +409,7 @@ GAME.sim = (function () {
       var n = on[Math.floor(rnd() * on.length)];
       if (chance(0.55)) GAME.npc.act(n, t);
       else GAME.npc.chatEvent(n, null, t);
-      if (chance(0.02)) GAME.ladder.npcChallengeTick(1);
+      GAME.ladder.npcChallengeTick(0.05);
       if (chance(0.08)) flavor(t);
     }
     realClock();

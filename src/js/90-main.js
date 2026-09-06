@@ -42,6 +42,7 @@ GAME.boot = (function () {
     RNG.init(S.seed, S.rngCursor || 0);
     reindex();
     CFG.pace = (S.settings && S.settings.pace) || 1;
+    if (S.cfg) for (var ck in S.cfg) if (S.cfg.hasOwnProperty(ck) && typeof S.cfg[ck] !== 'function') CFG[ck] = S.cfg[ck];
     GAME.progress.applyLevel(S.player);
     if (!S.player._rankName) S.player._rankName = GAME.progress.rankFor(S.player.xp).name;
     GAME.sim.backfillLadder();
@@ -89,7 +90,12 @@ GAME.boot = (function () {
     realRender = GAME.ui.render;
 
     GAME.normalize.run();
+    GAME.admin._cfg0 = JSON.parse(JSON.stringify(CFG));
     GAME.actions.bind();
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && GAME.admin.isOpen()) GAME.admin.hide();
+    }, false);
 
     window.addEventListener('hashchange', function () {
       var h = GAME.ui.fromHash();

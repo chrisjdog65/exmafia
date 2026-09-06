@@ -191,7 +191,7 @@ GAME.npc = (function () {
   function recompute(n) {
     if (n.id === 0) return;
     n.gear = GAME.items.gearPower(n);
-    n.healthMax = Math.max(50, Math.round(100 + (n.level - 1) * 12));
+    n.healthMax = Math.max(50, Math.round(100 + (n.level - 1) * 12.25));
     if (n.health > n.healthMax) n.health = n.healthMax;
   }
 
@@ -214,7 +214,7 @@ GAME.npc = (function () {
     if (h > 2.5 && h < 6.5) hourFactor *= 0.10;
     /* somebody who barely played their account is not suddenly going to
        start now - the roster keeps its dead weight */
-    var stickiness = clamp(0.20 + (n.pf === undefined ? 0.7 : n.pf) * 1.7, 0.08, 1);
+    var stickiness = clamp(0.42 + (n.pf === undefined ? 0.7 : n.pf) * 1.1, 0.25, 1);
     return clamp(n.p.activity * hourFactor * weekend * stickiness, 0, 1);
   }
 
@@ -222,10 +222,13 @@ GAME.npc = (function () {
   function catchUpPools(n, now) {
     var last = n.lastRegen || n.lastOnline || now;
     var mins = Math.min((now - last) / MIN, 60 * 24 * 3);
+    var lv = n.level - 1;
+    n.energyMax = Math.round(30 + 2.05 * lv);
     n.energy = Math.min(n.energyMax, (n.energy || 0) + Math.floor(mins / 3));
-    n.nerve = Math.min(Math.round(5 + n.level * 0.34), (n.nerve || 0) + Math.floor(mins / 5));
-    n.will = Math.min(Math.round(12 + n.level), (n.will || 0) + Math.floor(mins / 12));
-    n.attacks = Math.min(Math.round(5 + n.level * 0.06), (n.attacks || 0) + Math.floor(mins / 20));
+    n.nerve = Math.min(Math.round(5 + 0.35 * lv), (n.nerve || 0) + Math.floor(mins / 5));
+    n.will = Math.min(Math.round(12 + 0.98 * lv), (n.will || 0) + Math.floor(mins / 12));
+    n.dexg = Math.min(Math.round(20 + 0.60 * lv), (n.dexg || 0) + Math.floor(mins / 8));
+    n.attacks = Math.min(Math.round(5 + 0.07 * lv), (n.attacks || 0) + Math.floor(mins / 20));
     if (n.hospUntil <= now && n.health < n.healthMax) {
       n.health = Math.min(n.healthMax, n.health + Math.floor(mins / 1.5) * Math.max(1, Math.round(n.healthMax / 100)));
     }
@@ -422,11 +425,9 @@ GAME.npc = (function () {
     var sets = Math.min(Math.floor(n.energy / 5), rint(1, 4));
     if (sets < 1) return;
     n.energy -= sets * 5;
-    var stat = pickW([['str', 1 + n.p.aggro], ['def', 1 + (1 - n.p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7], ['lab', 0.5]]);
-    var cur = n[stat] || 10;
-    var mult = clamp(1 + n.p.skill * 4.5 * Math.min(1, n.level / 45), 1, 6.5);
-    var per = mult * (1.6 / (1 + Math.pow(cur / 240, 0.82))) * (1 + Math.log(1 + n.level) / Math.LN10 * 0.22);
-    n[stat] = Math.round((cur + per * sets) * 100) / 100;
+    var stat = pickW([['str', 1 + n.p.aggro], ['def', 1 + (1 - n.p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7]]);
+    n.will = Math.max(0, (n.will || 0) - sets);
+    trainNpc(n, stat, sets);
   }
 
   function doAttack(n, now) {
@@ -439,12 +440,14 @@ GAME.npc = (function () {
 
   function gainNpcXP(n, xp) {
     n.xp = (n.xp || 0) + xp;
+    var ceiling = CFG.MAX_LEVEL > 0 ? CFG.MAX_LEVEL : 100000;
     var need = GAME.progress.xpForLevel(n.level + 1);
-    while (n.level < 100 && n.xp >= need) {
+    var guard = 0;
+    while (n.level < ceiling && n.xp >= need && guard++ < 400) {
       n.level++;
-      n.healthMax = Math.round(100 + (n.level - 1) * 12);
+      n.healthMax = Math.round(100 + (n.level - 1) * 12.25);
       n.health = n.healthMax;
-      n.energyMax = 50 + n.level * 2;
+      n.energyMax = Math.round(30 + 2.05 * (n.level - 1));
       need = GAME.progress.xpForLevel(n.level + 1);
       if (chance(0.30)) GAME.feed.newsFrom('rankUp', 'rank', { who: n.name, rank: GAME.progress.rankFor(n.xp).name, n: n.level, city: n.city });
       /* they upgrade their kit as they grow */
@@ -456,6 +459,41 @@ GAME.npc = (function () {
         recompute(n);
       }
     }
+  }
+
+  /* The gym an account has actually paid its way into. They train on the
+     same curve the player does - same multipliers, same diminishing
+     returns, same Will factor - so a level 30 account is a level 30
+     account whoever is driving it. */
+  function gymFor(n) {
+    var list = DATA.gym || [];
+    var best = list[0] || { str: 1, def: 1, spd: 1, dex: 1 };
+    var purse = (n.money || 0) + (n.bank || 0);
+    for (var i = 0; i < list.length; i++) {
+      var g = list[i];
+      if ((g.lvl || 1) > n.level) continue;
+      if (g.price > purse * (0.6 + n.p.greed * 1.4)) continue;
+      if ((g.str + g.def + g.spd + g.dex) > (best.str + best.def + best.spd + best.dex)) best = g;
+    }
+    return best;
+  }
+
+  function npcWillFactor(n) {
+    var max = Math.max(1, Math.round(12 + 0.98 * (n.level - 1)));
+    return 0.55 + 0.45 * clamp((n.will || 0) / max, 0, 1);
+  }
+
+  function trainNpc(n, stat, sets, willF) {
+    var g = gymFor(n);
+    var mult = g[stat] || 0;
+    if (!mult) { stat = 'str'; mult = g.str || 1; }
+    var cur = n[stat] || 10;
+    var per = mult
+      * (1.6 / (1 + Math.pow(cur / 240, 0.82)))
+      * (1 + Math.log(1 + n.level) / Math.LN10 * 0.22)
+      * (willF === undefined ? npcWillFactor(n) : willF);
+    n[stat] = Math.round((cur + per * sets) * 100) / 100;
+    return per * sets;
   }
 
   /* ---- bulk progression ------------------------------------------
@@ -510,9 +548,9 @@ GAME.npc = (function () {
     /* What they had when they sat down PLUS everything that trickled in
        while they were sitting there. Spending only the standing pool is
        what a session actually looks like for about ten seconds. */
-    var braveMax = Math.round(5 + n.level * 0.34);
-    var willMax = Math.round(12 + n.level);
-    var atkMax = Math.round(5 + n.level * 0.06);
+    var braveMax = Math.round(5 + 0.35 * (n.level - 1));
+    var willMax = Math.round(12 + 0.98 * (n.level - 1));
+    var atkMax = Math.round(5 + 0.07 * (n.level - 1));
     var brave = (n.nerve || 0) + minutes / 5;
     var will = (n.will || 0) + minutes / 12;
     var energy = (n.energy || 0) + minutes / 3;
@@ -557,14 +595,17 @@ GAME.npc = (function () {
     var wantAttacks = Math.min(Math.floor(attacks), Math.floor(energy * atkShare / 10));
     var gymEnergy = Math.max(0, energy - wantAttacks * 10);
     var sets = Math.floor(gymEnergy / 5 * clamp(0.4 + p.skill * 0.8, 0.15, 1));
+    sets = Math.min(sets, Math.floor(will));    // a set costs Will as well as Energy
     if (sets > 0) {
       energy -= sets * 5;
-      var stat = pickW([['str', 1 + p.aggro], ['def', 1 + (1 - p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7], ['lab', 0.5]]);
-      var cur = n[stat] || 10;
-      var mult = clamp(1 + p.skill * 4.5 * Math.min(1, n.level / 45), 1, 6.5);
-      var lb = 1 + Math.log(1 + n.level) / Math.LN10 * 0.22;
-      var per = mult * (1.6 / (1 + Math.pow(cur / 240, 0.82))) * lb;
-      n[stat] = Math.round((cur + per * sets) * 100) / 100;
+      var willF = 0.55 + 0.45 * clamp(will / Math.max(1, willMax), 0, 1);
+      will -= sets;
+      /* they spread their sets the way their temperament says they should */
+      var plan = [['str', 1 + p.aggro], ['def', 1 + (1 - p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7]];
+      var chunks = Math.min(3, sets);
+      for (var q = 0; q < chunks; q++) {
+        trainNpc(n, pickW(plan), Math.floor(sets / chunks), willF);
+      }
     }
 
     /* Fights. One in five is played out properly so the ladder really
@@ -735,6 +776,7 @@ GAME.npc = (function () {
     style: style, voice: voice, remember: remember, rivalry: rivalry, recompute: recompute,
     onlinePressure: onlinePressure, localHour: localHour, catchUpPools: catchUpPools,
     act: act, pickTarget: pickTarget, chatEvent: chatEvent, avatar: avatar, gainXP: gainNpcXP,
-    bulkProgress: bulkProgress, crimeChance: crimeChance, bestCrime: bestCrime, bestJob: bestJob
+    bulkProgress: bulkProgress, crimeChance: crimeChance, bestCrime: bestCrime, bestJob: bestJob,
+    gymFor: gymFor, trainNpc: trainNpc
   };
 })();

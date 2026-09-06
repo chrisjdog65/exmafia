@@ -82,6 +82,7 @@ GAME.save = (function () {
   function serialize() {
     S.rngCursor = RNG.cursor;
     S.savedAt = Date.now();
+    S.cfg = CFG;                 // tuning edits from the back office travel with the game
     /* underscore keys are derived caches - they cost space and go stale */
     return JSON.stringify(S, function (k, v) {
       return (k.charAt(0) === '_' && k !== '_rankName' && k !== '_lastInterest' && k !== '_lastIncome') ? undefined : v;

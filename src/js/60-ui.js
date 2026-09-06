@@ -17,6 +17,8 @@ var NAV = [
 
   { grp: 'Violence' },
   { r: 'ladder', t: 'Attack Ladder', hot: true },
+  { r: 'oc', t: 'Organised Crime' },
+  { r: 'board', t: 'Notice Board' },
   { r: 'players', t: 'Players' },
   { r: 'hitlist', t: 'Hitlist' },
   { r: 'bodyguard', t: 'Bodyguard' },
@@ -170,6 +172,10 @@ GAME.ui = (function () {
       if (n.r === 'jail' && GAME.player.inJail()) badge = '<span class="badge">!</span>';
       if (n.r === 'hospital' && GAME.player.inHospital()) badge = '<span class="badge">!</span>';
       if (n.r === 'round' && GAME.season.over() && !S.rumbleDone) badge = '<span class="badge gold">!</span>';
+      if (n.r === 'board') {
+        var ready = GAME.contracts.active().filter(function (c) { return GAME.contracts.isDone(c); }).length;
+        if (ready) badge = '<span class="badge green">' + ready + '</span>';
+      }
       if (n.r === 'school') {
         var sc = GAME.school.current();
         if (sc && sc.done) badge = '<span class="badge green">&#10003;</span>';

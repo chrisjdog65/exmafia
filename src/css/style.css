@@ -328,3 +328,41 @@ label.f span{display:block;color:var(--dim);font-size:10px;margin-bottom:2px}
 /* ---------- footer ---------- */
 .foot{margin-top:10px;padding:8px;border-top:1px solid var(--line);color:var(--dimmer);font-size:9.5px;text-align:center;line-height:1.8}
 .foot a{color:#7b7c85}
+
+/* ---------- the back office ---------- */
+#adminpanel{
+  position:fixed;inset:0;z-index:200;background:rgba(4,4,6,.94);
+  overflow-y:auto;font:11px/1.5 Verdana,Geneva,Tahoma,sans-serif;color:var(--ink);
+}
+.admwrap{max-width:1280px;margin:0 auto;padding:0 10px 40px}
+.admbar{
+  position:sticky;top:0;z-index:3;padding:8px 10px;margin:0 -10px 8px;
+  background:linear-gradient(180deg,#2b1418,#150c0e);border-bottom:1px solid var(--red);
+  letter-spacing:1px;
+}
+.admbar b{color:var(--red2)}
+.admclose{float:right;cursor:pointer;color:var(--dim)}
+.admclose:hover{color:#fff}
+.admtabs{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px;position:sticky;top:32px;z-index:2;background:rgba(4,4,6,.96);padding:4px 0}
+.admtabs a{padding:3px 10px;border:1px solid var(--line2);background:#1a1b20;font-size:10.5px}
+.admtabs a.on{background:#3a1a20;border-color:var(--red);color:#fff}
+.admmsg{border:1px solid #3a2b16;background:#221b10;color:#e6d5b8;padding:5px 9px;margin-bottom:8px}
+.admbody{padding-bottom:20px}
+.admsect{border:1px solid var(--line);background:var(--panel);margin-bottom:8px}
+.admsect h4{
+  margin:0;padding:5px 9px;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;
+  color:#e6d5b8;background:#20161a;border-bottom:1px solid var(--line2);font-weight:bold;
+}
+.admsect>*:not(h4){margin-left:9px;margin-right:9px}
+.admsect>p,.admsect>.admrow,.admsect>.admgrid,.admsect>textarea,.admsect>.scroll{margin-top:8px;margin-bottom:8px}
+.admgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:5px 10px}
+.admf{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.admf span{color:var(--dim);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admf span i{color:var(--dimmer);font-style:normal}
+.admf input[type=text],.admf input[type=number]{width:112px;flex:none}
+.admrow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.admcell{width:96px;padding:1px 4px;font-size:10.5px}
+.admtable td{padding:2px 3px}
+.admcrumb{padding:4px 0}
+#adminpanel textarea{margin-bottom:6px}
+@media (max-width:680px){ .admgrid{grid-template-columns:1fr} }

@@ -227,6 +227,37 @@ GAME.actions = (function () {
     GAME.ui.render();
   };
 
+  /* ---- organised crime ---- */
+  H.ocopen = function (id) { S.ocJob = id; GAME.oc.clearCrew(); GAME.oc.autoFill(GAME.oc.get(id) || { roles: [] }); GAME.ui.render(); };
+  H.ocback = function () { S.ocJob = null; S.lastOc = null; GAME.ui.render(); };
+  H.ocauto = function () { var j = GAME.oc.get(S.ocJob); if (j) GAME.oc.autoFill(j); GAME.ui.render(); };
+  H.occlear = function () { GAME.oc.clearCrew(); GAME.ui.render(); };
+  H.ocrun = function (id) {
+    var r = GAME.oc.run(id);
+    if (r.err) return GAME.ui.toast(r.err, 'bad');
+    S.lastOc = r;
+    GAME.ui.toast(r.success ? 'It came off. Your cut: ' + money(r.cut) : 'It fell apart.', r.success ? 'good' : 'bad');
+    GAME.ui.render();
+  };
+
+  /* ---- the notice board ---- */
+  H.conaccept = function (id) {
+    var r = GAME.contracts.accept(Number(id));
+    if (!ok(r, 'Taken.')) return;
+    GAME.ui.render();
+  };
+  H.conclaim = function (id) {
+    var r = GAME.contracts.claim(Number(id));
+    if (!ok(r)) return;
+    GAME.ui.toast('Paid: ' + money(r.c.reward) + ' and ' + r.c.points + ' points.', 'good');
+    GAME.ui.render();
+  };
+  H.condrop = function (id) {
+    var r = GAME.contracts.drop(Number(id));
+    if (!ok(r, 'Dropped. They noticed.')) return;
+    GAME.ui.render();
+  };
+
   /* ---- shop & items ---- */
   H.shopcat = function (id) { S.uiShopCat = id; GAME.ui.render(); };
   H.buy = function (id, n) {
@@ -494,6 +525,23 @@ GAME.actions = (function () {
     GAME.boot.start({ name: name, city: city.name, hood: city.hood, gender: g });
   };
 
+  /* ---- the knock ------------------------------------------------
+     Six clicks on CITY, quickly, and the back office opens. Nothing
+     advertises it and nothing else in the game uses the gesture.
+  ------------------------------------------------------------------ */
+  var knocks = [];
+  function cityKnock() {
+    var now = Date.now();
+    knocks = knocks.filter(function (t) { return now - t < 2500; });
+    knocks.push(now);
+    if (knocks.length >= 6) {
+      knocks = [];
+      GAME.admin.show();
+      return true;
+    }
+    return false;
+  }
+
   /* ---- dispatch ---- */
   function onClick(e) {
     var t = e.target;
@@ -510,7 +558,12 @@ GAME.actions = (function () {
       el2 = el2.parentNode;
     }
     if (navFam) { e.preventDefault(); GAME.ui.go('family', { id: navFam }); return; }
-    if (nav) { e.preventDefault(); GAME.ui.go(nav); return; }
+    if (nav) {
+      e.preventDefault();
+      if (nav === 'city' && cityKnock()) return;
+      GAME.ui.go(nav);
+      return;
+    }
     if (who !== null && who !== undefined && !act) {
       e.preventDefault();
       GAME.ui.go('profile', { id: who });
@@ -530,6 +583,15 @@ GAME.actions = (function () {
     GAME.save.markDirty();
   }
 
+  function onChange(e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-act') === 'ocpick') {
+      GAME.oc.assign(t.getAttribute('data-id'), t.value === '' ? null : Number(t.value));
+      GAME.ui.render();
+    }
+  }
+
   function onKey(e) {
     if (e.key === 'Enter') {
       var id = e.target && e.target.id;
@@ -543,6 +605,7 @@ GAME.actions = (function () {
 
   function bind() {
     document.addEventListener('click', onClick, false);
+    document.addEventListener('change', onChange, false);
     document.addEventListener('keydown', onKey, false);
   }
 

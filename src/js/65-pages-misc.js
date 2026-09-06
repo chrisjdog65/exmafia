@@ -119,6 +119,17 @@ PAGES.help = function () {
   '</table>' +
   '<p class="dim">Anybody who hits you opens a six hour revenge window. Nobody may touch an account under level 5 or less than two days old. A bodyguard is 25 points and covers two hours, in which nobody can attack you and you cannot attack anybody.</p>' +
   '<div class="hr"></div>' +
+  '<p><b>Organised Crime.</b> Some jobs cannot be done alone. If you are in a family you can put a crew together out of it, ' +
+  'one player to a role, and every one of them rolls against their own stats on the night. A driver with no Agility loses you ' +
+  'the van. One slip can be covered; two and everybody walks home or gets pinched. Sitting a crew down costs 4 Brave, the pot ' +
+  'is split round the crew, and each job cools off for hours afterwards. The other families run their own jobs whether you are ' +
+  'looking or not, and you read about it in the paper.</p>' +
+  '<div class="hr"></div>' +
+  '<p><b>The Notice Board.</b> Work the other two hundred want doing and will not do themselves &mdash; a name put in a hospital ' +
+  'bed, somebody bailed out, a piece fetched that they cannot be seen buying, or just proof you can put a shift in. ' +
+  'You can carry three jobs at a time. Finish one and the person who posted it pays you in cash and points and thinks better ' +
+  'of you for good. Sit on it for a day and they take it back, tell the shoutbox, and remember.</p>' +
+  '<div class="hr"></div>' +
   '<p><b>Money.</b> Cash on you can be mugged. Cash in the bank cannot. Crimes pay best and can put you inside; shifts are slow and safe; ' +
   'the Truck Stop is Dexterity turned into goods and the fence downtown will not open the shutter for under twenty-five units. ' +
   'The Item Market, the Auction and the Point Market are all run by the other two hundred people here.</p>' +
@@ -126,10 +137,13 @@ PAGES.help = function () {
   '<p><b>The round.</b> exMafia runs in eight week rounds. When one ends, everybody on the ladder goes into <b>The Rumble</b> &mdash; ' +
   'one room, last one standing &mdash; and then the whole city resets to level one. Your name on the wall and your lifetime counters are all that carry over.</p>' +
   '<div class="hr"></div>' +
-  '<p><b>The other two hundred.</b> Every other name here is an account with its own time zone, its own hours, its own temper and its own idea ' +
-  'of how to play. They do crimes, train, fight over the ladder, argue in the shoutbox, join and leave families, hold grudges for weeks, and ' +
-  'eventually stop logging in for good while new people sign up underneath them. None of that waits for you. Come back after a week away and ' +
-  'the city will have moved without you.</p>' +
+  '<p><b>The other two hundred.</b> Every one of them signed up the same day you did, at level one, with ten in every stat and nothing in ' +
+  'their pockets. They have been playing ever since &mdash; their own time zone, their own hours, their own temper and their own idea of how ' +
+  'to play. They do crimes, train, fight over the ladder, argue in the shoutbox, join and leave families, post work on the notice board, hold ' +
+  'grudges for weeks, and a few of them eventually stop logging in for good while somebody new signs up underneath them. None of it waits ' +
+  'for you. Come back after a week away and the pack will have moved without you. <b>The Pack</b> panel on the City page shows exactly where ' +
+  'you sit in it.</p>' +
+  '<p class="dim">There is no level cap, for you or for them.</p>' +
   '<div class="hr"></div>' +
   '<p class="dim">Your game saves to this browser by itself. Settings has an export button if you want a copy of it.</p>' +
   '</div></div>';

@@ -176,10 +176,10 @@ GAME.fence = (function () {
     p.truckKit.ammo -= 1;
     if (p.truckKit.ammo <= 0) delete p.truckKit.ammo;
 
-    var got = rint(bd.units[0], bd.units[1]) + Math.min(3, Math.floor((p.lab || 10) / 250));
+    var got = rint(bd.units[0], bd.units[1]) + Math.min(3, Math.floor((p.dex || 10) / 250));
     p.goodsUnits = units() + got;
     p.st.runs = (p.st.runs || 0) + 1;
-    p.lab = Math.round((p.lab + 0.2) * 100) / 100;
+    p.dex = Math.round((p.dex + 0.2) * 100) / 100;
     GAME.progress.gainXP(Math.max(1, Math.round(got * 0.8)));
     GAME.feed.log('fence', bd.job + ': ' + got + ' units off the back. ' + p.goodsUnits + ' in the lockup.');
     return { ok: true, got: got, total: p.goodsUnits, job: bd.job, band: bd };
@@ -253,7 +253,7 @@ GAME.school = (function () {
     if (!cur) return { err: 'You are not enrolled.' };
     if (!cur.done) return { err: 'The course runs for another ' + clock(cur.until - NOW()) + '.' };
     p.iq = Math.round((p.iq + cur.cls.iq) * 100) / 100;
-    if (cur.cls.lab) p.lab = Math.round((p.lab + cur.cls.lab) * 100) / 100;
+    if (cur.cls.lab) p.dex = Math.round((p.dex + cur.cls.lab) * 100) / 100;
     p.school = null;
     p.st.classes = (p.st.classes || 0) + 1;
     GAME.progress.gainXP(Math.round(cur.cls.iq * 0.6));

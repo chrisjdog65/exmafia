@@ -95,7 +95,6 @@ GAME.normalize = (function () {
       var gm = DATA.gym[g];
       gm.price = gm.price || 0; gm.lvl = gm.lvl || 1;
       gm.str = gm.str || 0; gm.def = gm.def || 0; gm.spd = gm.spd || 0; gm.dex = gm.dex || 0;
-      gm.lab = gm.lab === undefined ? Math.max(0, (gm.dex || 0) * 0.7) : gm.lab;
       gm.desc = gm.desc || '';
     }
     DATA.gym.sort(function (a, b) { return a.price - b.price; });
@@ -173,6 +172,34 @@ GAME.normalize = (function () {
       }
     }
 
+    /* ---- the two newer systems ---- */
+    DATA.oc = arr(DATA.oc);
+    if (!DATA.oc.length) DATA.oc = fallbackOC();
+    for (var o = 0; o < DATA.oc.length; o++) {
+      var J = DATA.oc[o];
+      J.lvl = J.lvl || 1;
+      J.roles = arr(J.roles);
+      if (!J.roles.length) J.roles = [{ id: 'muscle', name: 'Muscle', stat: 'str', need: 20, desc: '' }];
+      for (var ro = 0; ro < J.roles.length; ro++) {
+        var R2 = J.roles[ro];
+        R2.id = R2.id || ('role' + ro);
+        R2.name = R2.name || R2.id;
+        if (['str', 'def', 'spd', 'dex', 'iq'].indexOf(R2.stat) < 0) R2.stat = 'str';
+        R2.need = R2.need || 20;
+      }
+      J.minCrew = Math.min(J.minCrew || J.roles.length, J.roles.length);
+      J.cut = arr(J.cut).length === 2 ? J.cut : [1000, 4000];
+      J.xp = arr(J.xp).length === 2 ? J.xp : [10, 30];
+      J.jailS = arr(J.jailS).length === 2 ? J.jailS : [120, 600];
+      J.cooldownH = J.cooldownH || 4;
+      J.brief = J.brief || ''; J.ok = J.ok || 'It comes off clean.';
+      J.fail = J.fail || 'It does not come off.'; J.caught = J.caught || 'Everybody goes down.';
+    }
+    DATA.oc.sort(function (a, b) { return a.lvl - b.lvl; });
+
+    DATA.contracts = DATA.contracts || {};
+    if (!arr(DATA.contracts.kinds).length) DATA.contracts.kinds = null;   // engine falls back
+
     DATA.forum = DATA.forum || {};
     if (!arr(DATA.forum.boards).length) {
       DATA.forum.boards = [
@@ -237,10 +264,12 @@ GAME.normalize = (function () {
   /* How long a level ought to take. Minutes at the start, weeks at the top. */
   function daysForLevel(L) { return 0.05 + 0.00035 * Math.pow(L, 2.4); }
 
+  var CURVE_LEVELS = 600;   // generated; past this the engine extrapolates
+
   function fitLevelCurve() {
     var table = [0], days = [0];
     var total = 0, d = 0;
-    for (var L = 2; L <= 100; L++) {
+    for (var L = 2; L <= CURVE_LEVELS; L++) {
       var dl = daysForLevel(L - 1);
       var gap = dailyXP(L - 1) * dl;
       /* round to something that reads like a game number */
@@ -254,18 +283,39 @@ GAME.normalize = (function () {
     DATA.levels.fitted = true;
   }
 
-  /* Rank titles are spread across the whole level range so every one of
-     them is reachable, weighted so the early promotions come quickly. */
+  /* Rank titles spread across levels 1-100 so every authored one is
+     reachable, then prestige titles carry on past the old cap for as long
+     as anybody keeps playing. */
+  var PRESTIGE = [
+    'Untouchable', 'The Quiet Man', 'Ghost of the Waterfront', 'Emeritus',
+    'Old Money', 'The Whisper', 'Chairman of the Board', 'The Last Word',
+    'Patron Saint of Thieves', 'Myth'
+  ];
+  var ROMAN = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII', ' IX', ' X'];
+
   function fitRankCurve() {
-    var r = DATA.ranks, n = r.length, t = DATA.levels.table;
-    if (n < 2) return;
+    var t = DATA.levels.table;
+    /* keep only the authored ranks; prestige is regenerated each boot */
+    var r = DATA.ranks.filter(function (x) { return !x.prestige; });
+    var n = r.length;
+    if (n < 2) { DATA.ranks = r; return; }
     for (var i = 0; i < n; i++) {
       var lvl = 1 + Math.round(99 * Math.pow(i / (n - 1), 1.25));
       r[i].xp = t[clamp(lvl, 1, 100) - 1];
       r[i].lvl = lvl;
     }
-    /* keep it strictly increasing even if two ranks land on one level */
-    for (var k = 1; k < n; k++) if (r[k].xp <= r[k - 1].xp) r[k].xp = r[k - 1].xp + 1;
+    /* one more title every twenty levels, for ever */
+    var step = 20, pi = 0;
+    for (var L = 120; L <= t.length; L += step) {
+      var name = PRESTIGE[pi % PRESTIGE.length] + ROMAN[Math.floor(pi / PRESTIGE.length) % ROMAN.length];
+      r.push({
+        name: name, lvl: L, xp: t[L - 1], prestige: true,
+        blurb: 'Past the point where the titles meant anything. They still made one up for you.'
+      });
+      pi++;
+    }
+    for (var k = 1; k < r.length; k++) if (r[k].xp <= r[k - 1].xp) r[k].xp = r[k - 1].xp + 1;
+    DATA.ranks = r;
   }
 
   /* ---- last-resort tables so the game always boots ---- */
@@ -297,11 +347,41 @@ GAME.normalize = (function () {
   }
   function fallbackGyms() {
     return [
-      { id: 'ymca', name: 'The Old YMCA', lvl: 1, price: 0, str: 1, def: 1, spd: 1, dex: 1, lab: 1, desc: 'Free, and worth every penny.' },
-      { id: 'boxing', name: "Sal's Boxing Club", lvl: 8, price: 60000, str: 2.4, def: 1.2, spd: 2.1, dex: 0.9, lab: 0.6, desc: 'Heavy bags and a hard old man shouting.' },
-      { id: 'iron', name: 'Iron House', lvl: 20, price: 2400000, str: 3.6, def: 3.2, spd: 1.4, dex: 1.4, lab: 1.2, desc: 'Chalk, rust and no mirrors.' }
+      { id: 'ymca', name: 'The Old YMCA', lvl: 1, price: 0, str: 1, def: 1, spd: 1, dex: 1, desc: 'Free, and worth every penny.' },
+      { id: 'boxing', name: "Sal's Boxing Club", lvl: 8, price: 60000, str: 2.4, def: 1.2, spd: 2.1, dex: 0.9, desc: 'Heavy bags and a hard old man shouting.' },
+      { id: 'iron', name: 'Iron House', lvl: 20, price: 2400000, str: 3.6, def: 3.2, spd: 1.4, dex: 1.4, desc: 'Chalk, rust and no mirrors.' }
     ];
   }
+  function fallbackOC() {
+    return [
+      { id: 'liquorstore', name: 'Turn Over a Liquor Store', lvl: 3, minCrew: 2, cut: [4000, 11000], xp: [40, 90], cooldownH: 4, jailS: [120, 600],
+        roles: [{ id: 'driver', name: 'Driver', stat: 'spd', need: 30, desc: 'Engine running, facing the right way.' },
+                { id: 'muscle', name: 'Muscle', stat: 'str', need: 40, desc: 'Says nothing. Does not have to.' }],
+        brief: 'Family-run place on the corner. No alarm, no camera, one till.',
+        ok: 'Ninety seconds, door to door. The old man never even reached for the phone.',
+        fail: 'The till was empty and the safe was on a timer nobody mentioned.',
+        caught: 'A squad car was parked round the side the whole time.' },
+      { id: 'armouredvan', name: 'Take an Armoured Van', lvl: 22, minCrew: 3, cut: [180000, 420000], xp: [900, 1800], cooldownH: 12, jailS: [900, 2700],
+        roles: [{ id: 'wheel', name: 'Wheelman', stat: 'spd', need: 300, desc: 'Two exits, and he has driven both.' },
+                { id: 'muscle', name: 'Muscle', stat: 'str', need: 380, desc: 'For the doors, and for the guard.' },
+                { id: 'lookout', name: 'Lookout', stat: 'iq', need: 200, desc: 'Counts the schedule, not the money.' }],
+        brief: 'Same route, same time, every Thursday. Somebody should have changed that.',
+        ok: 'Doors open, bags out, gone before the second guard finished his sandwich.',
+        fail: 'They ran the route backwards this week. You watched it drive away.',
+        caught: 'It was not a payroll run. It was a trap with a payroll paint job.' },
+      { id: 'goldvault', name: 'Empty a Gold Vault', lvl: 70, minCrew: 5, cut: [40000000, 110000000], xp: [90000, 180000], cooldownH: 72, jailS: [3000, 9000],
+        roles: [{ id: 'face', name: 'The Face', stat: 'iq', need: 4000, desc: 'Walks in the front. Signs something.' },
+                { id: 'crack', name: 'Safecracker', stat: 'dex', need: 5000, desc: 'Old hands, older ears.' },
+                { id: 'alarm', name: 'Alarm Man', stat: 'iq', need: 4500, desc: 'Knows which wire is the lie.' },
+                { id: 'muscle', name: 'Muscle', stat: 'str', need: 6000, desc: 'In case the plan needs help.' },
+                { id: 'wheel', name: 'Wheelman', stat: 'spd', need: 4500, desc: 'Idling on the ramp with the boot open.' }],
+        brief: 'Nine tonnes of it, two floors down, behind a door that has never been opened by anybody who was not supposed to.',
+        ok: 'You are downstairs before the shift change and out before anybody counts. It takes three trips.',
+        fail: 'The inner door had a second lock nobody drew on the plan.',
+        caught: 'Somebody talked. There were men waiting on both stairwells.' }
+    ];
+  }
+
   function fallbackCities() {
     return [
       { id: 'newyork', name: 'New York', country: 'USA', cost: 0, flightMin: 0, desc: 'Home.', bonus: { crime: 0, pay: 0 }, exclusive: [] },

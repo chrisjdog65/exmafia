@@ -89,16 +89,16 @@ GAME.crimes = (function () {
     if (b) return { err: 'You cannot work right now.' };
     if (!j) return { err: 'No such job.' };
     if (p.level < (j.lvl || 1)) return { err: 'You need to be level ' + j.lvl + '.' };
-    if ((p.lab || 10) < (j.lab || 0)) return { err: 'They want somebody with ' + j.lab + ' Labour. You have ' + Math.round(p.lab || 10) + '.' };
+    if ((p.dex || 10) < (j.lab || 0)) return { err: 'They want somebody with ' + fmt(j.lab) + ' Labour. You have ' + fmt(Math.round(p.dex || 10)) + '.' };
     if (p.energy < j.energy) return { err: 'That shift takes ' + j.energy + ' Energy. You have ' + Math.floor(p.energy) + '.' };
     p.energy -= j.energy;
-    var cash = Math.round(rint(j.pay[0], j.pay[1]) * (1 + Math.log10(1 + (p.lab || 10)) * 0.28));
+    var cash = Math.round(rint(j.pay[0], j.pay[1]) * (1 + Math.log(1 + (p.dex || 10)) / Math.LN10 * 0.28));
     var xp = rint(j.xp[0], j.xp[1]);
     GAME.player.pay(cash);
     GAME.progress.gainXP(xp);
     p.st.jobs = (p.st.jobs || 0) + 1;
     /* working teaches you a little of both, slowly */
-    p.lab = Math.round((p.lab + 0.55) * 100) / 100;
+    p.dex = Math.round((p.dex + 0.55) * 100) / 100;
     p.iq = Math.round((p.iq + 0.12) * 100) / 100;
     GAME.feed.log('job', j.name + '. (+' + money(cash) + ', +' + xp + ' xp)');
     return { ok: true, cash: cash, xp: xp, name: j.name, desc: j.desc };
@@ -151,6 +151,7 @@ GAME.jail = (function () {
     p.st.busts++;
     GAME.feed.newsFrom('bustOut', 'jail', { who: p.name, other: n.name, amount: money(cost), city: p.city });
     GAME.feed.log('jail', 'You posted ' + money(cost) + ' to spring ' + n.name + '.');
+    GAME.contracts.note('freed', { id: n.id });
     return { ok: true, cost: cost, name: n.name };
   }
 
@@ -178,6 +179,7 @@ GAME.jail = (function () {
       GAME.progress.gainXP(xp);
       GAME.feed.newsFrom('bustOut', 'jail', { who: p.name, other: n.name, city: p.city });
       GAME.feed.log('jail', 'You broke ' + n.name + ' out of the can. (+' + xp + ' xp)');
+      GAME.contracts.note('freed', { id: n.id });
       return { ok: true, name: n.name, xp: xp };
     }
     p.st.bustFail++;

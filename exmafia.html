@@ -338,6 +338,44 @@ label.f span{display:block;color:var(--dim);font-size:10px;margin-bottom:2px}
 .foot{margin-top:10px;padding:8px;border-top:1px solid var(--line);color:var(--dimmer);font-size:9.5px;text-align:center;line-height:1.8}
 .foot a{color:#7b7c85}
 
+/* ---------- the back office ---------- */
+#adminpanel{
+  position:fixed;inset:0;z-index:200;background:rgba(4,4,6,.94);
+  overflow-y:auto;font:11px/1.5 Verdana,Geneva,Tahoma,sans-serif;color:var(--ink);
+}
+.admwrap{max-width:1280px;margin:0 auto;padding:0 10px 40px}
+.admbar{
+  position:sticky;top:0;z-index:3;padding:8px 10px;margin:0 -10px 8px;
+  background:linear-gradient(180deg,#2b1418,#150c0e);border-bottom:1px solid var(--red);
+  letter-spacing:1px;
+}
+.admbar b{color:var(--red2)}
+.admclose{float:right;cursor:pointer;color:var(--dim)}
+.admclose:hover{color:#fff}
+.admtabs{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px;position:sticky;top:32px;z-index:2;background:rgba(4,4,6,.96);padding:4px 0}
+.admtabs a{padding:3px 10px;border:1px solid var(--line2);background:#1a1b20;font-size:10.5px}
+.admtabs a.on{background:#3a1a20;border-color:var(--red);color:#fff}
+.admmsg{border:1px solid #3a2b16;background:#221b10;color:#e6d5b8;padding:5px 9px;margin-bottom:8px}
+.admbody{padding-bottom:20px}
+.admsect{border:1px solid var(--line);background:var(--panel);margin-bottom:8px}
+.admsect h4{
+  margin:0;padding:5px 9px;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;
+  color:#e6d5b8;background:#20161a;border-bottom:1px solid var(--line2);font-weight:bold;
+}
+.admsect>*:not(h4){margin-left:9px;margin-right:9px}
+.admsect>p,.admsect>.admrow,.admsect>.admgrid,.admsect>textarea,.admsect>.scroll{margin-top:8px;margin-bottom:8px}
+.admgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:5px 10px}
+.admf{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.admf span{color:var(--dim);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admf span i{color:var(--dimmer);font-style:normal}
+.admf input[type=text],.admf input[type=number]{width:112px;flex:none}
+.admrow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.admcell{width:96px;padding:1px 4px;font-size:10.5px}
+.admtable td{padding:2px 3px}
+.admcrumb{padding:4px 0}
+#adminpanel textarea{margin-bottom:6px}
+@media (max-width:680px){ .admgrid{grid-template-columns:1fr} }
+
 </style>
 </head>
 <body>
@@ -578,8 +616,11 @@ var CFG = {
   HEALTH_TICK: 90 * 1000,   // +1% health   / 90 s, out of hospital only
   ATTACK_TICK: 20 * MIN,    // +1 Attack    / 20 min
 
-  /* hard ceilings on the gauges, whatever the level */
-  CAP: { energy: 300, will: 150, nerve: 50, dexg: 120, health: 2000, attacks: 10 },
+  /* Ceilings on the gauges. Zero means no ceiling, which is the default:
+     there is no level cap in this game and nothing else is capped either.
+     The admin panel can put a lid back on any of them. */
+  CAP: { energy: 0, will: 0, nerve: 0, dexg: 0, health: 0, attacks: 0 },
+  MAX_LEVEL: 0,             // 0 = uncapped
 
   /* ---- caps ---- */
   NEWS_CAP: 400,
@@ -718,6 +759,7 @@ GAME.save = (function () {
   function serialize() {
     S.rngCursor = RNG.cursor;
     S.savedAt = Date.now();
+    S.cfg = CFG;                 // tuning edits from the back office travel with the game
     /* underscore keys are derived caches - they cost space and go stale */
     return JSON.stringify(S, function (k, v) {
       return (k.charAt(0) === '_' && k !== '_rankName' && k !== '_lastInterest' && k !== '_lastIncome') ? undefined : v;
@@ -891,8 +933,8 @@ GAME.state = (function () {
      drifts up to the middle of the ladder and a new player has nobody
      they can beat. */
   function playedFraction(p) {
-    var played = clamp(gauss(0.06 + p.activity * 0.72, 0.2), 0.004, 1);
-    if (chance(0.34)) played *= rflt(0.02, 0.2);      // came, saw, left
+    var played = clamp(gauss(0.22 + p.activity * 0.68, 0.2), 0.02, 1);
+    if (chance(0.18)) played *= rflt(0.15, 0.5);      // came, saw, drifted
     return played;
   }
   function effectiveDays(p, ageDays, played) {
@@ -900,7 +942,11 @@ GAME.state = (function () {
     return Math.max(0, ageDays * played * capture * rflt(0.6, 1.35));
   }
 
-  function makeNPC(id, usedNames, now) {
+  /* fresh = a brand new round: everybody signs up on the same day at level
+     one and grinds up together, which is how an exMafia round actually
+     started. The alternative builds an established world with years of
+     history already in it; the admin panel can regenerate either. */
+  function makeNPC(id, usedNames, now, fresh) {
     var arch = pickArchetype();
     var p = personality(arch);
     var name = null, guard = 0;
@@ -914,29 +960,42 @@ GAME.state = (function () {
     var city = pick(DATA.names.cities);
     var tz = pickW(TZ_POOL.map(function (t) { return [t[0], t[1]]; }));
 
-    /* Account age: a real roster is a long tail of veterans plus a
-       fat cluster of people who signed up in the last month. */
-    var ageDays = pickW([[rflt(0, 30), 34], [rflt(30, 120), 26], [rflt(120, 400), 22], [rflt(400, 1100), 18]]);
+    /* Account age: on a fresh round everybody signed up today. Otherwise a
+       real roster is a long tail of veterans over a fat cluster of people
+       who joined in the last month. */
+    var ageDays = fresh ? 0 : pickW([[rflt(0, 30), 34], [rflt(30, 120), 26], [rflt(120, 400), 22], [rflt(400, 1100), 18]]);
     var joined = now - ageDays * DAY;
 
     /* Where this account has actually got to, from how long it has been
        here and how hard it plays. Same curve the live game runs on. */
     var played = playedFraction(p);
-    var effDays = effectiveDays(p, ageDays, played) * (0.5 + arch.growth);
-    var level = clamp(GAME.progress.levelForDays(effDays), 1, 100);
+    var effDays = fresh ? 0 : effectiveDays(p, ageDays, played) * (0.5 + arch.growth);
+    var level = fresh ? 1 : Math.max(1, GAME.progress.levelForDays(effDays));
 
-    /* Gym time is whatever Energy was left after the fighting. */
-    var setsTotal = effDays * 96 * clamp(1 - p.aggro * 0.7, 0.15, 1) * clamp(0.3 + p.skill * 0.8, 0.2, 1);
-    var gymMult = clamp(1 + p.skill * 4.5 * Math.min(1, level / 45), 1, 6.5);
-    var st = {
-      str: statFromSets(setsTotal * rflt(0.18, 0.38), gymMult, level),
-      def: statFromSets(setsTotal * rflt(0.15, 0.34), gymMult, level),
-      spd: statFromSets(setsTotal * rflt(0.10, 0.28), gymMult, level),
-      dex: statFromSets(setsTotal * rflt(0.08, 0.24), gymMult, level)
-    };
+    var st;
+    if (fresh) {
+      /* Everybody off the same line. The small spread is the difference
+         between two people who both just signed up, and it is the only
+         thing separating them until they start playing. */
+      st = {
+        str: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100,
+        def: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100,
+        spd: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100,
+        dex: Math.round(clamp(gauss(10, 1.4), 7, 15) * 100) / 100
+      };
+    } else {
+      var setsTotal = effDays * 96 * clamp(1 - p.aggro * 0.7, 0.15, 1) * clamp(0.3 + p.skill * 0.8, 0.2, 1);
+      var gymMult = clamp(1 + p.skill * 4.5 * Math.min(1, level / 45), 1, 6.5);
+      st = {
+        str: statFromSets(setsTotal * rflt(0.18, 0.38), gymMult, level),
+        def: statFromSets(setsTotal * rflt(0.15, 0.34), gymMult, level),
+        spd: statFromSets(setsTotal * rflt(0.10, 0.28), gymMult, level),
+        dex: statFromSets(setsTotal * rflt(0.08, 0.24), gymMult, level)
+      };
+    }
 
-    var hp = 100 + level * 12;
-    var money = Math.round(Math.pow(level, 2.35) * (18 + p.greed * 90) * rflt(0.35, 2.4));
+    var hp = Math.round(100 + (level - 1) * 12.25);
+    var money = fresh ? rint(300, 800) : Math.round(Math.pow(level, 2.35) * (18 + p.greed * 90) * rflt(0.35, 2.4));
 
     var n = {
       id: id,
@@ -957,7 +1016,7 @@ GAME.state = (function () {
       level: level,
       xp: 0,   /* set from the level table just below */
       money: money,
-      bank: Math.round(money * rflt(0.4, 6) * p.patience),
+      bank: fresh ? 0 : Math.round(money * rflt(0.4, 6) * p.patience),
       str: st.str, def: st.def, spd: st.spd, dex: st.dex,
       healthMax: hp,
       health: Math.round(hp * rflt(0.55, 1)),
@@ -978,9 +1037,8 @@ GAME.state = (function () {
 
       fam: null, famRole: 'soldier',
       bounty: 0,
-      points: rint(0, 400),
-      iq: Math.round(10 + rflt(0, 1) * 40),
-      lab: Math.round(10 + rflt(0, 1) * 30),
+      points: fresh ? rint(0, 25) : rint(0, 400),
+      iq: fresh ? 10 : Math.round(10 + rflt(0, 1) * 40),
       bgUntil: 0,
       respect: Math.round(Math.pow(level, 1.5) * rflt(0.5, 2.2)),
 
@@ -1002,12 +1060,12 @@ GAME.state = (function () {
       rivals: {},
       pals: {},
 
-      w: Math.round(Math.pow(level, 1.7) * rflt(0.4, 3) * (0.4 + p.aggro)),
-      l: Math.round(Math.pow(level, 1.6) * rflt(0.4, 2.6)),
-      crimes: Math.round(Math.pow(level, 2.1) * rflt(1, 4)),
-      busts: Math.round(Math.pow(level, 1.2) * rflt(0, 3)),
-      posts: Math.round(Math.pow(level, 1.3) * rflt(0.2, 6) * (0.2 + p.chatty)),
-      friends: rint(0, 60),
+      w: fresh ? 0 : Math.round(Math.pow(level, 1.7) * rflt(0.4, 3) * (0.4 + p.aggro)),
+      l: fresh ? 0 : Math.round(Math.pow(level, 1.6) * rflt(0.4, 2.6)),
+      crimes: fresh ? 0 : Math.round(Math.pow(level, 2.1) * rflt(1, 4)),
+      busts: fresh ? 0 : Math.round(Math.pow(level, 1.2) * rflt(0, 3)),
+      posts: fresh ? 0 : Math.round(Math.pow(level, 1.3) * rflt(0.2, 6) * (0.2 + p.chatty)),
+      friends: fresh ? rint(0, 4) : rint(0, 60),
 
       sig: pick(DATA.names.signatures),
       bio: pick(DATA.names.bios),
@@ -1020,9 +1078,9 @@ GAME.state = (function () {
     };
     /* XP has to agree with the level table or nobody ever ranks up */
     var floorXP = GAME.progress.xpForLevel(n.level);
-    var nextXP = GAME.progress.xpForLevel(Math.min(100, n.level + 1));
-    n.xp = Math.round(floorXP + (nextXP - floorXP) * rflt(0, 0.92));
-    n.respect = Math.round(Math.pow(n.level, 1.5) * rflt(0.5, 2.2));
+    var nextXP = GAME.progress.xpForLevel(n.level + 1);
+    n.xp = fresh ? rint(0, 30) : Math.round(floorXP + (nextXP - floorXP) * rflt(0, 0.92));
+    n.respect = fresh ? 0 : Math.round(Math.pow(n.level, 1.5) * rflt(0.5, 2.2));
     n.gear = Math.round((n.str + n.def) * rflt(0.05, 0.45) * (0.4 + p.greed));
     return n;
   }
@@ -1109,8 +1167,9 @@ GAME.state = (function () {
 
     var used = {};
     used[String(opts.name).toLowerCase()] = 1;
+    var fresh = opts.established ? false : true;
     var npcs = [];
-    for (var i = 1; i <= CFG.NPC_COUNT; i++) npcs.push(makeNPC(i, used, now));
+    for (var i = 1; i <= CFG.NPC_COUNT; i++) npcs.push(makeNPC(i, used, now, fresh));
 
     var player = {
       id: 0,
@@ -1142,7 +1201,7 @@ GAME.state = (function () {
       bounty: 0,
       respect: 0,
       points: 25,
-      iq: 10, lab: 10,
+      iq: 10,
       bgUntil: 0,
       ladderLock: 0, lastFightAt: 0, bestLadderRung: 0,
       truckKit: {}, goodsUnits: 0,
@@ -1188,7 +1247,9 @@ GAME.state = (function () {
       nextMailId: 1,
       nextMktId: 1,
       counters: { day: 0, simSteps: 0 },
-      flags: { tutorialSeen: false },
+      flags: { tutorialSeen: false, freshRound: fresh },
+      seasonStart: now,
+      roundNo: 1,
       settings: { pace: 1, chatOn: true, newsOn: true, sfx: false, confirmAttack: true, compact: false }
     };
 
@@ -1198,16 +1259,17 @@ GAME.state = (function () {
     for (var z = 0; z < ladder.length; z++) {
       var lm = byId(ladder[z]);
       if (!lm) continue;
-      lm.lastFightAt = now - Math.round(rflt(0.2, 2.4) * DAY * (1.3 - lm.p.activity));
-      lm.rungSince = now - Math.round(rflt(1, 40) * DAY);
+      lm.lastFightAt = fresh ? now : now - Math.round(rflt(0.2, 2.4) * DAY * (1.3 - lm.p.activity));
+      lm.rungSince = fresh ? now : now - Math.round(rflt(1, 40) * DAY);
     }
     GAME.ladder.sync();
 
-    GAME.items.equipNPCs();
+    if (!fresh) GAME.items.equipNPCs();
     GAME.forumSim.seed(now);
     GAME.market.seed(now);
     GAME.points.seedMarket(now);
     GAME.auction.seed(now);
+    GAME.contracts.seed(now);
     GAME.sim.seedHistory(now);
     GAME.mail.system('welcome', {});
 
@@ -1231,7 +1293,8 @@ GAME.state = (function () {
     if (obj.player.points === undefined) obj.player.points = 10;
     if (obj.player.dexg === undefined) { obj.player.dexg = 20; obj.player.dexgMax = 20; }
     if (obj.player.iq === undefined) obj.player.iq = 10;
-    if (obj.player.lab === undefined) obj.player.lab = 10;
+    /* Labour used to live in its own field before it was folded into dex */
+    if (obj.player.lab !== undefined) { obj.player.dex = Math.max(obj.player.dex || 10, obj.player.lab); delete obj.player.lab; }
     if (obj.player.truckKit === undefined) obj.player.truckKit = {};
     if (obj.player.goodsUnits === undefined) obj.player.goodsUnits = 0;
     if (obj.player.school === undefined) obj.player.school = null;
@@ -2902,6 +2965,737 @@ DATA.cities = [
     exclusive: ['butterflySwords', 'jadeHandledPistol'],
     desc: 'Harbour lights and container cranes, and a hundred outfits who have never heard of you.' }
 ];
+
+
+/* ===== 14-data-crimes-hi.js ===== */
+/* ============================================================
+   14-data-crimes-hi.js :: the late game
+
+   The level cap is gone. Levels run past 100 for as long as
+   anybody keeps logging in, and 45-normalize.js already fits the
+   XP curve out to 600, but the content tables stopped at level 85
+   and left the back half of the game with an empty city. This file
+   extends the three tables that gate the late game. It APPENDS -
+   it never replaces - so 11-data-crimes.js and 13-data-props.js
+   remain the authority on everything below.
+
+     DATA.crimes  +16   tiers 9 and 10, levels 84 -> 170
+     DATA.jobs    +10   levels 55 -> 160, Labour 400 -> 9,000
+     DATA.cities  +4    airfare $220,000 -> $2,400,000
+
+   ------------------------------------------------------------
+   CRIMES - continuing the curve out of 11-data-crimes.js
+
+   The old table ended on the Commission: tier 8, level 80, 14
+   Brave, $1.87M-$4.19M, 22,600-38,500 xp, base 0.30, jailP 0.78.
+   Everything here is measured off that row.
+
+     money   the per-crime payout ratio EASES from x1.265 down to
+             x1.220 across the sixteen, the same way the property
+             ladder eases. Compounded that is x32.2 over the run:
+             average take climbs $3.03M -> $97.7M and the top pull
+             is $60.3M-$135M. A tier is still worth roughly x4.
+     xp      eases x1.225 -> x1.190, so xp grows a shade slower
+             than money exactly as it did across tiers 1-8
+             (money x4.2 a tier against xp x3.4). Average xp runs
+             30,550 -> 623,500.
+     brave   15 -> 24. pay/Brave and xp/Brave both rise strictly
+             with unlock level across all 72 crimes, so nothing
+             in this file is dead on arrival and nothing below it
+             is made redundant.
+     base    0.29 -> 0.16, falling monotonically out of the old
+             0.30 floor. At the listed level a committed account
+             is still landing these around one time in two once
+             Dexterity, IQ and mastery are added on top; the
+             level-headroom term does the rest.
+     jail    [1040, 3690] -> [1850, 5400] seconds and jailP 0.79
+             -> 0.85. This is the one place the old table's stated
+             ceiling gets lifted: CFG.JAIL_MAX is a note, not an
+             enforced clamp (nothing in the engine reads it), and
+             a legendary score has to cost a legendary sit. The
+             lawyer's retainer still halves it.
+     levels  every crime owns its own unlock level, and none of
+             the sixteen collides with the 56 below.
+
+   TIER 9 is the tier where you stop being a problem for people
+   and start being a problem for institutions. TIER 10 is the tier
+   people are still arguing about in forty years.
+
+   ------------------------------------------------------------
+   JOBS - still the safe option, still never the right one
+
+   Ten legitimate-front titles, levels 55 to 160, gated on Labour
+   from 400 up to 9,000 - the first jobs in the game to want the
+   stat at all. Energy 10 -> 22.
+
+   Pay is set at 0.40x the headline take of a same-level crime at
+   the bottom and tapers to 0.26x at the top, which is the ratio
+   the old table already ran at. What matters is the DAILY figure:
+   Will regenerates 120 a day against Brave's 288, so once the
+   costs are divided out a job earner clears 18-24% of what a
+   crime earner clears at the same level. Roughly a fifth, every
+   rung, all the way up. XP is held at 0.50-0.57x of the crime at
+   the same level, matching the old table's 0.61-0.70 band as
+   Brave costs climb away from Will costs.
+
+   pay/Will and xp/Will both rise strictly with level across all
+   32 jobs, including where these ten interleave with the old
+   ones at 55, 66 and 71. Nothing here dominates a job below it.
+
+   ------------------------------------------------------------
+   CITIES - four more hops off the frontier
+
+   Airfare keeps its x1.8-x2.3 a hop ($120,000 -> $2,400,000) and
+   the flight clock keeps climbing (100 -> 210 minutes). The
+   Pareto rule from 13-data-props.js holds: sorted by success
+   odds, payout rises monotonically, so no destination is
+   strictly better than another and every hop away from New York
+   is the same trade - money bought with risk.
+
+     city            fare      min   crime    pay
+     Hong Kong       120,000   100   -0.11  +0.50   (the old top)
+     Marseille       220,000   115   -0.12  +0.58
+     Macau           490,000   135   -0.13  +0.67
+     Panama City   1,090,000   165   -0.14  +0.76
+     Dubai         2,400,000   210   -0.16  +0.85
+   ============================================================ */
+
+
+DATA.crimes = (DATA.crimes || []).concat([
+
+  /* ---------- TIER 9 :: a problem for institutions ---------- */
+
+  { id: 'privatebank', name: "Turn a private bank inside out", tier: 9, lvl: 84, brave: 15,
+    base: 0.29, pay: [2370000, 5300000], xp: [27700, 47200], jail: [1040, 3690], jailP: 0.79,
+    ok: 'No queue, no tellers, no sign on the street. Just a partner in a good suit and eleven clients who cannot say out loud what they have lost.',
+    fail: 'The partner reads your letter of introduction twice and asks you to wait in the sitting room. You do not wait in the sitting room.',
+    caught: 'Private banks keep private security, and two of them were standing behind you while you signed the visitor book.' },
+
+  { id: 'customshouse', name: "Empty the bonded warehouse", tier: 9, lvl: 86, brave: 15,
+    base: 0.28, pay: [2990000, 6690000], xp: [33900, 57700], jail: [1080, 3790], jailP: 0.79,
+    ok: 'Everything in that building is seized, which means nobody owns it, which means nobody misses it. Four trucks, one night, one extremely relaxed inventory.',
+    fail: 'They changed the seals on the bay doors this morning and the new ones are numbered. You leave every number exactly where you found it.',
+    caught: 'A customs officer walking a midnight count finds a truck that is not on the schedule and a driver who is not on the payroll.' },
+
+  { id: 'interstate', name: "Peel a convoy off the interstate", tier: 9, lvl: 88, brave: 16,
+    base: 0.28, pay: [3760000, 8420000], xp: [41300, 70400], jail: [1120, 3885], jailP: 0.80,
+    ok: 'A closed ramp, a borrowed highway crew and eight minutes on a frontage road nobody has resurfaced since the war. Three trucks go in and none come out.',
+    fail: 'The lead driver clocks the cones, says something into his radio, and takes the whole convoy past you at seventy. You wave. He does not.',
+    caught: 'Troopers were working that stretch looking for something else entirely, and what they found on the frontage road was you.' },
+
+  { id: 'auditnight', name: "Rob the count room on audit night", tier: 9, lvl: 91, brave: 16,
+    base: 0.27, pay: [4720000, 10600000], xp: [50300, 85700], jail: [1165, 3985], jailP: 0.80,
+    ok: "Every dollar in the building is out on a table being counted by strangers with clipboards. You take it while it is still nobody in particular's responsibility.",
+    fail: 'The auditors seal the room at eight and sleep there in shifts, which is a level of dedication you had frankly not budgeted for.',
+    caught: 'One of the men with a clipboard is not an auditor. He has been sitting in that room for two weeks waiting to meet you.' },
+
+  { id: 'evidencelocker', name: "Clean out a federal evidence locker", tier: 9, lvl: 94, brave: 17,
+    base: 0.26, pay: [5920000, 13300000], xp: [61200, 104000], jail: [1210, 4085], jailP: 0.81,
+    ok: "Nine years of other people's confiscated fortunes, tagged, boxed and alphabetised for your convenience. You take the bags and leave the tags.",
+    fail: 'The combination rotates at shift handover and today the handover ran early. You walk back out through the same door, holding the same nothing.',
+    caught: 'Every shelf in that room has a lens on it and a marshal who watches the tape with his coffee at six in the morning.' },
+
+  { id: 'exchangevault', name: "Open the vault on the diamond floor", tier: 9, lvl: 97, brave: 17,
+    base: 0.25, pay: [7400000, 16600000], xp: [74200, 126000], jail: [1260, 4190], jailP: 0.81,
+    ok: 'Two hundred dealers keep their whole week in that vault and every one of them insures it privately. By the closing bell the floor is worth the price of the carpet.',
+    fail: 'It takes two keys held by two men who genuinely dislike each other and refuse to stand in the same room. Nothing opens, ever, including today.',
+    caught: 'The exchange keeps investigators who answer to nobody at all, and they spent the entire afternoon on the floor directly above you.' },
+
+  { id: 'manifestfraud', name: "Rewrite a season of shipping manifests", tier: 9, lvl: 100, brave: 18,
+    base: 0.25, pay: [9220000, 20700000], xp: [89900, 153000], jail: [1310, 4300], jailP: 0.82,
+    ok: 'Nine hundred containers of gravel, insured at the value of what the paperwork says is inside them, unloaded by men who cannot read the paperwork. Every claim settles beautifully.',
+    fail: 'The line moves to a new documentation system halfway through your season and your very fine forgeries stop matching anything on earth.',
+    caught: 'An insurance adjuster with a slow week lays two manifests side by side and finds the same container sitting in two oceans.' },
+
+  { id: 'pensionfund', name: "Retire a pension fund early", tier: 9, lvl: 104, brave: 18,
+    base: 0.24, pay: [11500000, 25700000], xp: [109000, 185000], jail: [1360, 4410], jailP: 0.82,
+    ok: "Forty years of somebody else's overtime, moved into three funds that do not exist and back out through a broker who does. The statements keep arriving on time for another year.",
+    fail: 'The trustees vote in an outside actuary and the whole arrangement has to be quietly put back the way it was before he lands.',
+    caught: 'A retired shop steward reads his statement properly, which nobody has ever done before, and starts making telephone calls.' },
+
+
+  /* ---------- TIER 10 :: forty years of stories ---------- */
+
+  { id: 'golddepot', name: "Walk a gold depository out in daylight", tier: 10, lvl: 108, brave: 19,
+    base: 0.23, pay: [14200000, 31900000], xp: [131000, 223000], jail: [1410, 4520], jailP: 0.83,
+    ok: 'Bullion is heavy, boring and impossible to hide, so they guard the ledger far harder than they guard the door. You take the door.',
+    fail: 'The pallets come in over the rating of your truck and the rear axle folds in the loading bay. Gold does not care how clever you are.',
+    caught: 'They weigh every vehicle going in and every vehicle coming out, and the difference between the two numbers is not something you can talk around.' },
+
+  { id: 'centralwire', name: "Move a central bank overnight", tier: 10, lvl: 113, brave: 19,
+    base: 0.22, pay: [17600000, 39500000], xp: [158000, 269000], jail: [1470, 4640], jailP: 0.83,
+    ok: 'One instruction, one settlement window, forty seconds either side of midnight. The money exists in eleven countries at once and then it does not exist anywhere.',
+    fail: 'The window shuts four minutes early for a public holiday nobody thought to tell you that country observes.',
+    caught: 'A quiet man reconciles the position at dawn, and by breakfast three governments are asking each other the same short question.' },
+
+  { id: 'freightterminal', name: "Take an entire freight terminal", tier: 10, lvl: 119, brave: 20,
+    base: 0.21, pay: [21800000, 48800000], xp: [190000, 323000], jail: [1525, 4760], jailP: 0.83,
+    ok: 'Not a pallet and not a plane. The whole terminal, for six hours, four hundred consignments deep, running off a shift roster you wrote yourself.',
+    fail: 'Fog stacks the inbounds and by two in the morning there are three times as many people in that building as your roster ever allowed for.',
+    caught: 'Air freight turns federal the second it crosses the fence, and the men who came for you carried badges from three different agencies.' },
+
+  { id: 'bearerbonds', name: "Lift a sovereign bond issue in transit", tier: 10, lvl: 126, brave: 21,
+    base: 0.20, pay: [26800000, 60100000], xp: [227000, 387000], jail: [1585, 4880], jailP: 0.84,
+    ok: 'Bearer paper belongs to whoever is holding it, which is the most beautiful sentence in the language. Tonight that is you, in the back of a laundry van.',
+    fail: 'The issue turns out to be registered rather than bearer, which makes it a very heavy case of extremely expensive stationery.',
+    caught: 'Two treasury couriers with nothing left to lose sit down on the case in the middle of the concourse and simply decline to move.' },
+
+  { id: 'coastnumbers', name: "Take the numbers of a whole coast", tier: 10, lvl: 134, brave: 21,
+    base: 0.19, pay: [33000000, 73800000], xp: [272000, 464000], jail: [1645, 5000], jailP: 0.84,
+    ok: 'Nine cities, one wire, one figure drawn off the closing handle at a track none of them can see. Every corner from the harbour to the state line pays into your hand.',
+    fail: 'Three cities in the middle will not come in, and a wire with a hole in it is only ever a very long telephone call.',
+    caught: 'Somewhere in city six a runner keeps the notebook he was told a hundred times never to keep, and a grand jury reads it out loud.' },
+
+  { id: 'submarine', name: "Buy a submarine and load it", tier: 10, lvl: 144, brave: 22,
+    base: 0.18, pay: [40400000, 90500000], xp: [325000, 554000], jail: [1710, 5130], jailP: 0.84,
+    ok: 'Diesel-electric, sold off for scrap, refitted in a mangrove by men paid in cash. She goes under off one coast and comes up off another with every crate bone dry.',
+    fail: 'She will not hold trim below sixty feet, and the crew quite reasonably decline to discover what happens at eighty.',
+    caught: 'A patrol aircraft photographs a wake with nothing in front of it, and there is precisely one thing in the world that makes a wake like that.' },
+
+  { id: 'stadiumnight', name: "Empty a stadium on championship night", tier: 10, lvl: 156, brave: 23,
+    base: 0.17, pay: [49400000, 111000000], xp: [388000, 660000], jail: [1775, 5265], jailP: 0.85,
+    ok: 'Eighty thousand people, four hours of cash through two hundred windows, and every camera in the building pointed at the grass. You work the tunnels while the crowd sings.',
+    fail: 'They armour the receipts this season and run them out at half time in a laundry truck, which is annoyingly clever of them.',
+    caught: 'The tunnels get their own police detail on a night like this. Those men are profoundly bored right up until the moment they see you.' },
+
+  { id: 'thefiling', name: "File the amendment", tier: 10, lvl: 170, brave: 24,
+    base: 0.16, pay: [60300000, 135000000], xp: [461000, 786000], jail: [1850, 5400], jailP: 0.85,
+    ok: 'Three pages, one notary, one clerk who stamps it without reading it. By Friday you hold a bank, a port and a pension board, and not one living person is looking for you.',
+    fail: 'It comes back across the counter for a missing schedule, and by the time you have the schedule the whole arrangement underneath it has expired.',
+    caught: 'Filings are public. A man with a library card and a long grudge reads yours on the day it lands and walks it straight to a prosecutor.' }
+
+]);
+
+
+DATA.jobs = (DATA.jobs || []).concat([
+
+  { id: 'uniontrustee', name: "Sit as trustee on the union local", lvl: 55, energy: 10, lab: 400,
+    pay: [44200, 63800], xp: [1310, 1890],
+    desc: 'Your name on the fund, your signature on the cheques, and one meeting a quarter where nobody asks a single question.' },
+
+  { id: 'portscheduler', name: "Schedule the berths for the port authority", lvl: 66, energy: 13, lab: 620,
+    pay: [131000, 189000], xp: [3430, 4970],
+    desc: 'You decide which ship unloads and which ship waits, and every hour of waiting costs somebody twelve thousand dollars.' },
+
+  { id: 'cagesupervisor', name: "Supervise the casino cage", lvl: 71, energy: 15, lab: 900,
+    pay: [311000, 449000], xp: [5870, 8530],
+    desc: 'Every chip in the building crosses your window twice. They trust you with the count because you always look so tired.' },
+
+  { id: 'bondingagent', name: "Write bonds for the construction trade", lvl: 80, energy: 16, lab: 1300,
+    pay: [943000, 1360000], xp: [14000, 20200],
+    desc: 'No bond, no site. You have never refused a contractor in your life and not one of them has ever asked you why.' },
+
+  { id: 'haulagedirector', name: "Direct the waste haulage board", lvl: 92, energy: 17, lab: 1850,
+    pay: [2320000, 3350000], xp: [30500, 44300],
+    desc: 'Nine hundred trucks across four states, and a landfill that has been quietly accepting deliveries after dark since 1974.' },
+
+  { id: 'complianceofficer', name: "Be the compliance officer at a private bank", lvl: 105, energy: 18, lab: 2550,
+    pay: [5480000, 7910000], xp: [64700, 94100],
+    desc: 'Your entire job is to notice things. Corner office, name on the door, and a spotless record of noticing nothing whatsoever.' },
+
+  { id: 'freeportcurator', name: "Curate a freeport art vault", lvl: 118, energy: 19, lab: 3400,
+    pay: [7950000, 11500000], xp: [92300, 134000],
+    desc: 'Crates that never clear customs, owners who never visit, and a valuation that climbs every time the crate changes hands in the dark.' },
+
+  { id: 'ratingsanalyst', name: "Rate the paper for the ratings house", lvl: 132, energy: 20, lab: 4500,
+    pay: [11400000, 16400000], xp: [130000, 189000],
+    desc: 'You put a letter on a stack of debt nobody has read. It is always the same letter, and it is always the same fee.' },
+
+  { id: 'wealthconsultant', name: "Consult for a sovereign wealth fund", lvl: 146, energy: 21, lab: 6300,
+    pay: [15500000, 22400000], xp: [183000, 265000],
+    desc: "A small country's entire savings, one committee of nine, and a per-diem that would embarrass a head of state." },
+
+  { id: 'centralbankchair', name: "Advise a central bank on reserves", lvl: 160, energy: 22, lab: 9000,
+    pay: [18400000, 26500000], xp: [222000, 322000],
+    desc: 'They pay you to tell them what their own money is doing all day. You tell them most of it, and you tell them slowly.' }
+
+]);
+
+
+DATA.cities = (DATA.cities || []).concat([
+
+  { id: 'marseille', name: 'Marseille', country: 'France',
+    cost: 220000, flightMin: 115,
+    bonus: { crime: -0.12, pay: 0.58 },
+    exclusive: [],
+    desc: "Sardines, sunlight and a stairwell quarter full of families who have been moving other people's cargo since Napoleon." },
+
+  { id: 'macau', name: 'Macau', country: 'China',
+    cost: 490000, flightMin: 135,
+    bonus: { crime: -0.13, pay: 0.67 },
+    exclusive: [],
+    desc: 'Portuguese tiles over baccarat tables, and junket rooms where the chips on the felt are worth more than the building.' },
+
+  { id: 'panama', name: 'Panama City', country: 'Panama',
+    cost: 1090000, flightMin: 165,
+    bonus: { crime: -0.14, pay: 0.76 },
+    exclusive: [],
+    desc: 'Glass towers over a ditch that runs the world, and a lawyer on every floor who will incorporate you before lunch.' },
+
+  { id: 'dubai', name: 'Dubai', country: 'United Arab Emirates',
+    cost: 2400000, flightMin: 210,
+    bonus: { crime: -0.16, pay: 0.85 },
+    exclusive: [],
+    desc: 'Gold sold by the kilo and a free zone where a container can change hands four times without ever once moving.' }
+
+]);
+
+
+/* ===== 15-data-items-hi.js ===== */
+/* ============================================================
+   15-data-items-hi.js :: the late catalogue
+   ------------------------------------------------------------
+   The level cap is gone. Levels run past 100 and keep going, and
+   the shop used to stop dead at 85 (Last Rites) with nothing left
+   to want. This file continues every ladder in 12-data-items.js
+   and 13-data-props.js out to level 160.
+
+     DATA.items  +41   24 weapons, 6 armour, 4 medical,
+                       3 boosters, 4 drops
+     DATA.props  +8    4 residences, 4 fronts
+     DATA.gym    +4    tiers ten through thirteen
+
+   WEAPON PRICING. Same law as the base catalogue: shop price is
+   solved against expected damage per swing at zero Strength,
+
+       power = (atk * 1.45 + 2) * acc            (31-combat)
+       price = power * PP(L)
+
+   PP(L) is the going rate for one point of power at level L. It
+   is read straight off the existing table below 85 (log-linear
+   between the real rungs: $8.9k at 48, $16.4k at 57, $28.1k at
+   65, $39.8k at 70, $49.6k at 74, $65.3k at 79, $85.8k at 84,
+   $90.9k at 85 - Last Rites) and above 85 it keeps climbing at a
+   rate that decays every single level:
+
+       PP(L+1) / PP(L) = 1 + 0.0545 - 0.000225 * (L - 85)
+
+   5.45% a level at 85, 3.76% a level at 160. Power over the same
+   stretch not quite doubles, so PRICE PER POINT OF ATTACK RISES
+   MONOTONICALLY inside every category, all the way up:
+
+       melee    $8.3k  ->  $466k        pistol   $23k  ->  $767k
+       smg      $34k   ->  $836k        rifle   $101k  ->  $1.74m
+       heavy    $95k   ->  $2.73m
+
+   One point of weapon attack is worth 12.6 Strength and one point
+   of armour defence 5.0 Guard, so a rising price per point is the
+   thing that stops a rich man buying his way past the gym. He
+   cannot. The Reckoning costs 61 times what Last Rites costs and
+   hits a shade UNDER twice as hard.
+
+   THE ACCURACY TRADE, which is the whole game up here. Accuracy
+   multiplies the entire damage line, Strength included, so a
+   low-accuracy monster is worth most to a WEAK account and loses
+   ground every day you train. Three pairs are built as genuine
+   forks rather than upgrades:
+
+     Meat Grinder (smg 107, 440/0.79, $144m)  vs
+     The Actuary  (rifle 108, 358/0.91, $142m)
+       Same money, one level apart. The Grinder wins below
+       Strength 2,275 and never again after.
+
+     Widow's Walk  (heavy 110, 640/0.62, $190m)  vs
+     The Full Stop (melee 110, 208/0.97, $97m)
+       The heavy hits harder until Strength 7,009, at which point
+       a lead pipe costing half as much overtakes it for good.
+
+     The Notary (pistol 120, 300/0.99, $230m)  vs
+     The Actuary (rifle 108, 358/0.91, $142m)
+       The Notary is a worse weapon that costs 62% more, until
+       Strength 4,519. Past that it is the best pistol ever built.
+
+   ARMOUR is priced against def on the base table's own curve
+   (log-quadratic fit through all twenty existing suits, which is
+   still climbing at 4.7% a level at 150). Plate costs Speed, and
+   Speed feeds both your hit chance and your evasion, so the line
+   deliberately zig-zags: -10, 0, -15, -5, -26, -9. The
+   Sarcophagus is 20% more defence than The Confessional for 3.1
+   times the money and twenty-one more points of Speed, and it is
+   supposed to be an argument.
+
+   MEDICAL. heal is a percentage and 30-items.js clamps the result
+   at your maximum, so 100 is 100 and the Private Clinic Suite
+   reached the ceiling back at level 55. Everything above it is
+   priced as a luxury good and written as one: the joke is that
+   the four-million-dollar surgeon gets you to exactly the same
+   place as the roll of bandages, only with better parking.
+
+   BOOSTERS stay loss-making. Priced at the time-value of the
+   resource they hand back - minutes of regeneration times what a
+   day is worth at that level - times 1.9 for Brave and Will and
+   times 1.0 for Energy, which is the ratio the base table already
+   uses. Amounts are sized to fill the bar at their unlock level
+   and no further, because 30-items.js clamps the overflow.
+   ============================================================ */
+
+DATA.items = (DATA.items || []).concat([
+
+  /* ==========================================================
+     MELEE  (5)  levels 48 - 110
+     Still the budget line. Lowest attack in the game and the
+     highest accuracy, which is exactly why it comes back into
+     fashion once your Strength is enormous.
+     ========================================================== */
+
+  { id: 'boathook', name: 'Boat Hook', cat: 'melee', lvl: 48, price: 780000,
+    atk: 63, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
+    desc: 'Eight feet of ash with a hooked steel head. Came off a tug and went straight into the back of a station wagon.' },
+
+  { id: 'quarrymaul', name: 'Quarry Maul', cat: 'melee', lvl: 57, price: 1640000,
+    atk: 86, def: 0, acc: 0.79, heal: 0, effect: null, stock: true,
+    desc: 'Twelve pounds on a hickory handle. Slow enough to read a paper between swings, and it does not seem to matter.' },
+
+  { id: 'barbersrazor', name: "Barber's Razor", cat: 'melee', lvl: 68, price: 4850000,
+    atk: 96, def: 0, acc: 0.98, heal: 0, effect: null, stock: true,
+    desc: 'Bone handle, stropped every morning for forty years by a man who never once nicked a customer.' },
+
+  { id: 'rebarwhip', name: 'Rebar Whip', cat: 'melee', lvl: 86, price: 18300000,
+    atk: 140, def: 0, acc: 0.93, heal: 0, effect: null, stock: true,
+    desc: 'Four feet of construction steel with the ribs still on it. Bends around whatever you were aiming at and finds it anyway.' },
+
+  { id: 'fullstop', name: 'The Full Stop', cat: 'melee', lvl: 110, price: 97000000,
+    atk: 208, def: 0, acc: 0.97, heal: 0, effect: null, stock: true,
+    desc: 'A pipe, filled with lead, capped at both ends and balanced by somebody who understood punctuation.' },
+
+
+  /* ==========================================================
+     PISTOL  (5)  levels 65 - 120
+     ========================================================== */
+
+  { id: 'undertaker', name: 'The Undertaker', cat: 'pistol', lvl: 65, price: 4720000,
+    atk: 129, def: 0, acc: 0.89, heal: 0, effect: null, stock: true,
+    desc: 'Matte grey, no shine, no engraving. It turns up, handles the arrangements and is gone before the family arrives.' },
+
+  { id: 'nightwatchman', name: 'Nightwatchman', cat: 'pistol', lvl: 74, price: 9980000,
+    atk: 160, def: 0, acc: 0.86, heal: 0, effect: null, stock: true,
+    desc: 'A big slow automatic built for men who sit in booths. Chambered for something you could post a letter with.' },
+
+  { id: 'quietman', name: 'The Quiet Man', cat: 'pistol', lvl: 87, price: 28100000,
+    atk: 202, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
+    desc: 'Suppressed, subsonic and about as loud as a chair being moved in the next room. Steady as a bench rest.' },
+
+  { id: 'bishopspiece', name: "Bishop's Piece", cat: 'pistol', lvl: 101, price: 71700000,
+    atk: 268, def: 0, acc: 0.87, heal: 0, effect: null, stock: true,
+    desc: 'Came out of a cathedral safe alongside two passports and a bearer bond. Nobody has ever asked the obvious question.' },
+
+  { id: 'thenotary', name: 'The Notary', cat: 'pistol', lvl: 120, price: 230000000,
+    atk: 300, def: 0, acc: 0.99, heal: 0, effect: null, stock: true,
+    desc: 'Small, slow and it does not miss. A waste of money in a weak hand and the last word in a strong one.' },
+
+
+  /* ==========================================================
+     SMG  (5)  levels 70 - 125
+     ========================================================== */
+
+  { id: 'papershredder', name: 'Paper Shredder', cat: 'smg', lvl: 70, price: 8310000,
+    atk: 168, def: 0, acc: 0.85, heal: 0, effect: null, stock: true,
+    desc: 'Feeds from the top, empties in a hurry, and leaves behind nothing anybody could put back together.' },
+
+  { id: 'metronome', name: 'The Metronome', cat: 'smg', lvl: 79, price: 17600000,
+    atk: 205, def: 0, acc: 0.90, heal: 0, effect: null, stock: true,
+    desc: 'Six hundred a minute, dead even, never a stumble. You could set a watch by it and one or two people have.' },
+
+  { id: 'hailstorm', name: 'The Hailstorm', cat: 'smg', lvl: 92, price: 44500000,
+    atk: 275, def: 0, acc: 0.84, heal: 0, effect: null, stock: true,
+    desc: 'Two barrels, one trigger, and a noise on the roof that carries on considerably longer than you expect.' },
+
+  { id: 'meatgrinder', name: 'Meat Grinder', cat: 'smg', lvl: 107, price: 144000000,
+    atk: 440, def: 0, acc: 0.79, heal: 0, effect: null, stock: true,
+    desc: 'Throws far more lead than it aims. Devastating right up until the day you get strong enough to notice how much of it goes nowhere.' },
+
+  { id: 'closingargument', name: 'The Closing Argument', cat: 'smg', lvl: 125, price: 418000000,
+    atk: 500, def: 0, acc: 0.86, heal: 0, effect: null, stock: true,
+    desc: 'Delivered at length, at volume and without interruption. Nobody has ever asked for a rebuttal.' },
+
+
+  /* ==========================================================
+     RIFLE  (5)  levels 84 - 140
+     The accurate end of the catalogue, 0.91 to 0.95.
+     ========================================================== */
+
+  { id: 'longgoodbye', name: 'The Long Goodbye', cat: 'rifle', lvl: 84, price: 29000000,
+    atk: 252, def: 0, acc: 0.92, heal: 0, effect: null, stock: true,
+    desc: 'Heavy barrel, folding bipod, and you are three streets away before the sound catches up with anybody.' },
+
+  { id: 'steeplejack', name: 'Steeplejack', cat: 'rifle', lvl: 95, price: 63600000,
+    atk: 300, def: 0, acc: 0.94, heal: 0, effect: null, stock: true,
+    desc: 'Built for a man who works high up and takes his time. Comes apart into a toolbag in eleven seconds.' },
+
+  { id: 'theactuary', name: 'The Actuary', cat: 'rifle', lvl: 108, price: 142000000,
+    atk: 358, def: 0, acc: 0.91, heal: 0, effect: null, stock: true,
+    desc: 'Works out the odds, states them plainly and collects on them. Boring, thorough and almost never wrong.' },
+
+  { id: 'thousandyards', name: 'One Thousand Yards', cat: 'rifle', lvl: 122, price: 342000000,
+    atk: 424, def: 0, acc: 0.95, heal: 0, effect: null, stock: true,
+    desc: 'The old one was named for six hundred. Somebody got ambitious, and somebody else got unlucky at four hundred yards further out.' },
+
+  { id: 'lastaddress', name: 'The Last Address', cat: 'rifle', lvl: 140, price: 892000000,
+    atk: 512, def: 0, acc: 0.93, heal: 0, effect: null, stock: true,
+    desc: 'Chambered for a cartridge they stopped making in 1958. There are eleven rounds left in the world and you own nine of them.' },
+
+
+  /* ==========================================================
+     HEAVY  (4)  levels 92 - 160
+     Enormous numbers, 0.62 to 0.71 accuracy, and a price premium
+     on top of both. The end of the catalogue.
+     ========================================================== */
+
+  { id: 'blastfurnace', name: 'The Blast Furnace', cat: 'heavy', lvl: 92, price: 68300000,
+    atk: 500, def: 0, acc: 0.71, heal: 0, effect: null, stock: true,
+    desc: 'Belt-fed and water-cooled, and the barrel will glow if you hold the trigger long enough. Somebody always does.' },
+
+  { id: 'widowswalk', name: "Widow's Walk", cat: 'heavy', lvl: 110, price: 190000000,
+    atk: 640, def: 0, acc: 0.62, heal: 0, effect: null, stock: true,
+    desc: 'Lobs a shell the size of a milk bottle in a long lazy arc. Misses better than a third of the time, and the misses are still an event.' },
+
+  { id: 'wreckingball', name: 'The Wrecking Ball', cat: 'heavy', lvl: 132, price: 695000000,
+    atk: 748, def: 0, acc: 0.70, heal: 0, effect: null, stock: true,
+    desc: 'Less a weapon than a piece of demolition plant that somebody fitted with a trigger and a shoulder strap.' },
+
+  { id: 'reckoning', name: 'The Reckoning', cat: 'heavy', lvl: 160, price: 2460000000,
+    atk: 900, def: 0, acc: 0.66, heal: 0, effect: null, stock: true,
+    desc: 'Nobody will say where it came from and nobody has to. It arrives, it is used once, and the argument is settled permanently.' },
+
+
+  /* ==========================================================
+     ARMOR  (6)  levels 80 - 150
+     def soaks damage. spd feeds your hit chance and your evasion
+     both, so the plate is a trade every single rung.
+     ========================================================== */
+
+  { id: 'bankjobrig', name: 'Bank Job Rig', cat: 'armor', lvl: 80, price: 12500000,
+    atk: 0, def: 296, spd: -10, acc: 0, heal: 0, effect: null, stock: true,
+    desc: 'Plate front, plate back, plate down both arms. Built for ten minutes of standing very still in a marble lobby.' },
+
+  { id: 'tailoredcomposite', name: 'Tailored Composite', cat: 'armor', lvl: 92, price: 40000000,
+    atk: 0, def: 348, acc: 0, heal: 0, effect: null, stock: true,
+    desc: 'Woven in a laboratory, cut by a tailor, and it weighs less than the jacket over it. You are paying for the nothing.' },
+
+  { id: 'sappersharness', name: "Sapper's Harness", cat: 'armor', lvl: 105, price: 97800000,
+    atk: 0, def: 412, spd: -15, acc: 0, heal: 0, effect: null, stock: true,
+    desc: 'Collar, apron and groin flap, all of it rated for a bad afternoon. You will move like a piece of furniture.' },
+
+  { id: 'confessional', name: 'The Confessional', cat: 'armor', lvl: 118, price: 284000000,
+    atk: 0, def: 470, spd: -5, acc: 0, heal: 0, effect: null, stock: true,
+    desc: 'Panels, padding and a high stiff collar, and whatever gets said to it stays inside.' },
+
+  { id: 'sarcophagus', name: 'The Sarcophagus', cat: 'armor', lvl: 138, price: 883000000,
+    atk: 0, def: 566, spd: -26, acc: 0, heal: 0, effect: null, stock: true,
+    desc: 'Four hundred pounds of layered plate that two men bolt you into. Nothing gets through. Nothing much gets past you either.' },
+
+  { id: 'cathedralplate', name: 'Cathedral Plate', cat: 'armor', lvl: 150, price: 1800000000,
+    atk: 0, def: 620, spd: -9, acc: 0, heal: 0, effect: null, stock: true,
+    desc: 'Articulated, mirror-finished, nine months of one man in one shed. You can hear yourself breathing inside it.' },
+
+
+  /* ==========================================================
+     MEDICAL  (4)
+     heal is clamped at your maximum, so 100 is the ceiling and
+     the Private Clinic Suite hit it at level 55. These are the
+     same outcome at four escalating prices, which is the joke.
+     ========================================================== */
+
+  { id: 'ambulanceretainer', name: 'Ambulance on Retainer', cat: 'medical', lvl: 72, price: 1050000,
+    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
+    desc: 'Parked around the corner from wherever you happen to be, engine running and meter running. Gets you upright entirely, which is all anything does.' },
+
+  { id: 'surgeonowes', name: 'The Surgeon Who Owes You', cat: 'medical', lvl: 92, price: 4000000,
+    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
+    desc: 'He lost badly at your table in 1981 and has been paying it back in sutures ever since. Same result as a roll of gauze, reached with far better lighting.' },
+
+  { id: 'hospitalwing', name: 'A Wing With Your Name Off It', cat: 'medical', lvl: 115, price: 16000000,
+    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
+    desc: 'You funded the whole floor, they thanked you privately, and there is always a bed made up. Full recovery. So were the bandages.' },
+
+  { id: 'standingorder', name: 'The Standing Order', cat: 'medical', lvl: 145, price: 77000000,
+    atk: 0, def: 0, acc: 0, heal: 100, effect: null, stock: true,
+    desc: 'Three specialists on salary, a helicopter on a roof and your blood type on ice in four cities. You will be completely fine. You were always going to be.' },
+
+
+  /* ==========================================================
+     BOOSTERS  (3)
+     Amounts fill the bar at their unlock level and no further -
+     30-items.js clamps the overflow and you would be paying for
+     nothing. Still deliberately loss-making, same as the rest.
+       energy +1 = 3 real minutes   brave +1 = 5   will +1 = 12
+     ========================================================== */
+
+  { id: 'vitaminshot', name: 'The Vitamin Shot', cat: 'booster', lvl: 66, price: 1850000,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: { stat: 'energy', amount: 150 }, stock: true,
+    desc: 'Whatever is in the little brown bottle, it is not a vitamin. You will reorganise the entire garage at four in the morning.' },
+
+  { id: 'cellarbottle', name: 'The Last Bottle in the Cellar', cat: 'booster', lvl: 82, price: 5700000,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: { stat: 'brave', amount: 30 }, stock: true,
+    desc: 'Pre-war, dust an inch thick, and the man who laid it down laid it down for precisely this kind of evening.' },
+
+  { id: 'sixweeks', name: 'Six Weeks in the Country', cat: 'booster', lvl: 96, price: 51000000,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: { stat: 'will', amount: 50 }, stock: true,
+    desc: 'A farmhouse, a cook and no telephone. You come back with steady hands and the patience of a much younger man.' },
+
+
+  /* ==========================================================
+     DROPS  (4)
+     Junk out of a beaten man's pockets. Worth nothing. Kept.
+     ========================================================== */
+
+  { id: 'cleaningticket', name: 'Dry-Cleaning Ticket, Six Weeks Old', cat: 'drop', lvl: 1, price: 1,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: null, stock: false,
+    desc: 'Two suits and a topcoat, still on the rail on Elizabeth Street. Somebody is about to get a bargain.' },
+
+  { id: 'fallenhorse', name: 'Betting Slip on a Horse That Fell', cat: 'drop', lvl: 1, price: 2,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: null, stock: false,
+    desc: 'Fifty to win in the fourth. The horse made it as far as the turn and then it did not.' },
+
+  { id: 'keytonothing', name: 'A Key That Fits Nothing You Own', cat: 'drop', lvl: 1, price: 3,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: null, stock: false,
+    desc: 'Brass, worn smooth, and stamped DO NOT DUPLICATE by somebody with a sense of humour.' },
+
+  { id: 'matchbooknumber', name: 'Matchbook with a Number Inside', cat: 'drop', lvl: 1, price: 4,
+    atk: 0, def: 0, acc: 0, heal: 0, effect: null, stock: false,
+    desc: 'No name, just seven digits in blue biro. It rings a long time before anybody picks up, and then they hang up.' }
+
+]);
+
+
+/* ============================================================
+   PROPERTIES
+   ------------------------------------------------------------
+   RESIDENCES continue the base table's two laws exactly.
+     hp    = 0.52 * price^0.42, the same coefficient that runs
+             from the Cold-Water Walk-Up to the Private Island.
+     price growth per level keeps easing, and it never ticks up:
+             1.0940 (60->71) -> 1.0833 -> 1.0702 -> 1.0573 -> 1.0445
+     upkeep as a share of price per day keeps climbing the way it
+             already was: 0.111% -> 0.128% -> 0.140% -> 0.153%,
+             0.167%, 0.182%, 0.198%. A palace is a hole in the
+             floor you pour money into, which is the point.
+
+   BUSINESSES pay back in 8 to 20 real days at the level they
+   unlock, and the payback keeps SLOPING UP, so the newsstand
+   stays the fastest earner in the game and the hundred-billion
+   holding is the slowest. Measured properly - income is per game
+   hour, upkeep per game day:
+
+       payback = price / (income * 24 - upkeep)
+
+       Offshore Casino  (76, existing)   19.47 days
+       Regional Airline (86)             19.61 days
+       Shipping Line   (106)             19.75 days
+       Private Bank    (130)             19.86 days
+       Clearing House  (160)             19.95 days
+
+   The daily nut stays a little over 40% of gross, drifting down
+   from the base table's 42% the same way it has been drifting
+   since the pool hall. Price growth per level eases 1.0905 ->
+   1.0887 -> 1.0714 -> 1.0543 -> 1.0373.
+   ============================================================ */
+
+DATA.props = (DATA.props || []).concat([
+
+  /* ---- RESIDENCES ---- */
+
+  { id: 'borderRanch', name: 'Ranch on the Border', kind: 'home',
+    lvl: 82, price: 2200000000, upkeep: 3360000, income: 0,
+    hp: 4400, energyRegen: 53,
+    desc: "Forty thousand acres, two countries, and a gate in the fence that is not on anybody else's map." },
+
+  { id: 'canalPalazzo', name: 'Palazzo on the Canal', kind: 'home',
+    lvl: 102, price: 8400000000, upkeep: 14030000, income: 0,
+    hp: 7700, energyRegen: 62,
+    desc: "Three hundred years of somebody else's family on the walls and your name on the deed at the bottom." },
+
+  { id: 'mountainHouse', name: 'The Mountain House', kind: 'home',
+    lvl: 125, price: 30000000000, upkeep: 54600000, income: 0,
+    hp: 13100, energyRegen: 71,
+    desc: 'You own the mountain, the road up it, and the man at the weather station who decides when the road is closed.' },
+
+  { id: 'principality', name: 'The Principality', kind: 'home',
+    lvl: 150, price: 90000000000, upkeep: 178200000, income: 0,
+    hp: 20700, energyRegen: 80,
+    desc: 'Eleven square miles, a flag, a currency and a seat at a table nobody can vote you off.' },
+
+
+  /* ---- BUSINESSES ---- */
+
+  { id: 'regionalAirline', name: 'Regional Airline', kind: 'biz',
+    lvl: 86, price: 2800000000, upkeep: 101800000, income: 10190000,
+    hp: 0, energyRegen: 0,
+    desc: 'Forty aircraft, ninety routes and a cargo hold that nobody has ever inspected twice in the same week.' },
+
+  { id: 'shippingLine', name: 'Merchant Shipping Line', kind: 'biz',
+    lvl: 106, price: 11200000000, upkeep: 397400000, income: 40190000,
+    hp: 0, energyRegen: 0,
+    desc: 'Sixty hulls under four flags, and not one of those four countries answers a telephone after Friday lunch.' },
+
+  { id: 'privateBank', name: 'Private Bank', kind: 'biz',
+    lvl: 130, price: 40000000000, upkeep: 1389000000, income: 141800000,
+    hp: 0, energyRegen: 0,
+    desc: 'Marble lobby, brass letterbox, no sign, and a client list that fits comfortably on one index card.' },
+
+  { id: 'clearingHouse', name: 'The Clearing House', kind: 'biz',
+    lvl: 160, price: 120000000000, upkeep: 4077000000, income: 420500000,
+    hp: 0, energyRegen: 0,
+    desc: 'Every dollar on the continent passes through your ledger for a tenth of a second, and you keep the interest on that tenth.' }
+
+]);
+
+
+/* ============================================================
+   GYMS  -  tiers ten through thirteen
+   ------------------------------------------------------------
+   Priced on MARGINAL value exactly like the base nine: what a
+   rung costs per point it adds to your best-available multiplier
+   across all four stats, given you already own everything below
+   it. Membership is one-off and kept forever, so a gym you have
+   outgrown is still free to walk back into - which is what makes
+   a specialist worth buying at all.
+
+     tier  lvl   price      pts added   $ per point   growth/lvl
+       9    62   $45.8m        4.6        $9.96m        1.0879
+      10    75   $155m         5.6        $27.7m        1.0812
+      11    98   $1.28bn       8.6        $148.8m       1.0757
+      12   122   $4.35bn       5.6        $776.8m       1.0713
+      13   150   $38bn         8.2        $4.63bn       1.0655
+
+   Best multiplier available if you own every gym up to tier N:
+     tier    9     10     11     12     13
+     str   7.6    9.0   13.4   13.4   14.6
+     def   7.4    8.8    8.8   11.6   14.4
+     spd   7.2    8.6    8.6   11.4   14.2
+     dex   7.0    8.4   12.6   12.6   14.0
+   Every rung moves at least two columns, so there is no dead
+   tier. The Yard is the specialist: monstrous on Strength and
+   Labour, teaches Guard and Agility not at all, and the tier
+   above it is deliberately the exact complement.
+
+   dex trains Labour, which is what a shift pays and what a truck
+   load is worth.
+   ============================================================ */
+
+DATA.gym = (DATA.gym || []).concat([
+
+  { id: 'theQuarry', name: 'The Quarry',
+    lvl: 75, price: 155000000,
+    str: 9, def: 8.8, spd: 8.6, dex: 8.4,
+    desc: 'A working stone quarry with a bench in the cutting shed. You lift what the crane is too slow to be bothered with.' },
+
+  { id: 'theYard', name: 'The Yard',
+    lvl: 98, price: 1280000000,
+    str: 13.4, def: 0, spd: 0, dex: 12.6,
+    desc: 'No machines, no mirrors, no music. A pile of rocks, a pile of sandbags, and a man with a whistle who used to run a prison.' },
+
+  { id: 'conservatory', name: 'The Conservatory',
+    lvl: 122, price: 4350000000,
+    str: 11.8, def: 11.6, spd: 11.4, dex: 11.2,
+    desc: 'Glass roof, sprung floor, a fencing master, a swimming coach and one old man whose entire job is teaching you how to fall.' },
+
+  { id: 'provingGround', name: 'The Proving Ground',
+    lvl: 150, price: 38000000000,
+    str: 14.6, def: 14.4, spd: 14.2, dex: 14,
+    desc: 'Forty acres behind a wire fence with no name on the gate. There is no waiting list because there is nobody left to wait behind.' }
+
+]);
 
 
 /* ===== 20-data-names.js ===== */
@@ -9296,7 +10090,13 @@ GAME.ladder = (function () {
      two days old, whichever protection lasts longer. Newbies may still
      attack - the shield only points one way. */
   function isNewbie(e) {
-    return (e.level || 1) < CFG.NEWBIE_LEVEL || (NOW() - (e.joined || 0)) < CFG.NEWBIE_HOURS * HOUR;
+    if (CFG.NEWBIE_LEVEL > 0 && (e.level || 1) < CFG.NEWBIE_LEVEL) return true;
+    /* The two-day shield is for people who joined a round already in
+       progress. At the start of a round everybody signed up together, so
+       nobody is shielded by it and the ladder is live from the first hour. */
+    var roundAge = NOW() - (S.seasonStart || S.createdAt || 0);
+    if (roundAge < CFG.NEWBIE_HOURS * HOUR) return false;
+    return (NOW() - (e.joined || 0)) < CFG.NEWBIE_HOURS * HOUR;
   }
 
   function canAttack(targetId) {
@@ -9529,6 +10329,7 @@ GAME.ladder = (function () {
       t.health = Math.max(1, Math.round(maxHealth(t) * 0.12));
       GAME.feed.newsFrom('mug', 'atk', { attacker: p.name, defender: t.name, amount: money(take), city: t.city });
       GAME.feed.log('win', 'You mugged ' + money(take) + ' off ' + t.name + '. (+' + out.xp + ' xp)');
+      GAME.contracts.note('mugged', { id: t.id, amount: take });
       GAME.npc.remember(t, 'mugged_by_player', { amount: take });
       if (chance(CFG.DROP_CHANCE)) {
         var drops = GAME.items.all().filter(function (i) { return i.cat === 'drop'; });
@@ -9543,6 +10344,7 @@ GAME.ladder = (function () {
       p.str = Math.round((p.str + out.str) * 100) / 100;
       p.def = Math.round((p.def + out.def) * 100) / 100;
       GAME.feed.newsFrom('hospital', 'atk', { attacker: p.name, defender: t.name, city: t.city, n: Math.round(out.hosp / MIN) });
+      GAME.contracts.note('hospitalised', { id: t.id });
       GAME.feed.log('win', 'You put ' + t.name + ' in a bed for ' + Math.round(out.hosp / MIN) +
         ' minutes. +0.6 Strength, +0.6 Guard, +' + out.xp + ' xp.');
       GAME.npc.remember(t, 'hospitalised_by_player', {});
@@ -9608,6 +10410,7 @@ GAME.ladder = (function () {
         } else {
           def.hospUntil = NOW() + hospTime(res.dmgDealt * 1.7, def);
           def.hospWhy = 'Hospitalised by ' + att.name;
+          GAME.contracts.note('hospitalised', { id: def.id });
           def.health = 1;
           att.str = Math.round((att.str + 0.6 + rnd()) * 100) / 100;
           att.def = Math.round((att.def + 0.5 + rnd() * 0.8) * 100) / 100;
@@ -9704,9 +10507,13 @@ GAME.ladder = (function () {
      fortnight means something.
   -------------------------------------------------------------------- */
   function npcChallengeTick(hours) {
+    /* 18% of game-hours, and `hours` may be a fraction of one. Callers pass
+       elapsed game time; this works out how many challenges that buys. */
+    var expected = Math.max(0, hours) * 0.18;
+    var n = Math.floor(expected);
+    if (chance(expected - n)) n++;
     var fired = 0;
-    for (var h = 0; h < Math.min(hours, 400); h++) {
-      if (!chance(0.18)) continue;
+    for (var h = 0; h < Math.min(n, 600); h++) {
       var l = roster();
       var challenger = null, targetRung = 0;
       if (chance(0.6)) {
@@ -9810,10 +10617,20 @@ GAME.ladder = (function () {
 
 GAME.progress = (function () {
 
+  /* The fitted table runs to a few hundred levels. Past the end of it the
+     curve is extrapolated from its own final slope, so nobody ever hits a
+     wall - there is no level cap in this game. */
   function xpForLevel(lv) {
     var t = (DATA.levels && DATA.levels.table) || null;
-    if (t && t[lv - 1] !== undefined) return t[lv - 1];
-    return Math.round(110 * Math.pow(lv - 1, 2.42) + (lv - 1) * 60);
+    if (!t || !t.length) return Math.round(110 * Math.pow(lv - 1, 2.42) + (lv - 1) * 60);
+    if (lv <= t.length) return t[lv - 1];
+    var last = t[t.length - 1];
+    var gap = last - t[t.length - 2];
+    var growth = gap / (t[t.length - 2] - t[t.length - 3]);
+    if (!isFinite(growth) || growth < 1.001) growth = 1.02;
+    var over = lv - t.length, total = last;
+    for (var i = 0; i < over && i < 4000; i++) { gap *= growth; total += gap; }
+    return Math.round(total);
   }
 
   function rankFor(xp) {
@@ -9837,14 +10654,16 @@ GAME.progress = (function () {
     return (DATA.levels && DATA.levels.perLevel) || { energy: 2, will: 1, brave: 0.34, health: 12, attacks: 0.06 };
   }
 
+  function cap(v, c) { return (c && c > 0) ? Math.min(c, v) : v; }
+
   function applyLevel(p) {
-    var lv = p.level - 1, C = CFG.CAP;
-    p.energyMax = Math.min(C.energy, Math.round(30 + 2.05 * lv));
-    p.willMax = Math.min(C.will, Math.round(12 + 0.98 * lv));
-    p.nerveMax = Math.min(C.nerve, Math.round(5 + 0.35 * lv));
-    p.dexgMax = Math.min(C.dexg, Math.round(20 + 0.60 * lv));
-    p.healthMax = Math.min(C.health, Math.round(100 + 12.25 * lv));
-    p.attacksMax = Math.min(C.attacks, Math.round(5 + 0.07 * lv));
+    var lv = p.level - 1, C = CFG.CAP || {};
+    p.energyMax = cap(Math.round(30 + 2.05 * lv), C.energy);
+    p.willMax = cap(Math.round(12 + 0.98 * lv), C.will);
+    p.nerveMax = cap(Math.round(5 + 0.35 * lv), C.nerve);
+    p.dexgMax = cap(Math.round(20 + 0.60 * lv), C.dexg);
+    p.healthMax = cap(Math.round(100 + 12.25 * lv), C.health);
+    p.attacksMax = cap(Math.round(5 + 0.07 * lv), C.attacks);
     if (p.dexg === undefined) p.dexg = p.dexgMax;
   }
 
@@ -9852,7 +10671,8 @@ GAME.progress = (function () {
     var p = S.player;
     p.xp += Math.max(0, Math.round(n));
     var before = p.level, leveled = [];
-    while (p.level < 100 && p.xp >= xpForLevel(p.level + 1)) {
+    var ceiling = CFG.MAX_LEVEL > 0 ? CFG.MAX_LEVEL : 100000;
+    while (p.level < ceiling && p.xp >= xpForLevel(p.level + 1) && leveled.length < 400) {
       p.level++;
       leveled.push(p.level);
     }
@@ -10120,16 +10940,16 @@ GAME.crimes = (function () {
     if (b) return { err: 'You cannot work right now.' };
     if (!j) return { err: 'No such job.' };
     if (p.level < (j.lvl || 1)) return { err: 'You need to be level ' + j.lvl + '.' };
-    if ((p.lab || 10) < (j.lab || 0)) return { err: 'They want somebody with ' + j.lab + ' Labour. You have ' + Math.round(p.lab || 10) + '.' };
+    if ((p.dex || 10) < (j.lab || 0)) return { err: 'They want somebody with ' + fmt(j.lab) + ' Labour. You have ' + fmt(Math.round(p.dex || 10)) + '.' };
     if (p.energy < j.energy) return { err: 'That shift takes ' + j.energy + ' Energy. You have ' + Math.floor(p.energy) + '.' };
     p.energy -= j.energy;
-    var cash = Math.round(rint(j.pay[0], j.pay[1]) * (1 + Math.log10(1 + (p.lab || 10)) * 0.28));
+    var cash = Math.round(rint(j.pay[0], j.pay[1]) * (1 + Math.log(1 + (p.dex || 10)) / Math.LN10 * 0.28));
     var xp = rint(j.xp[0], j.xp[1]);
     GAME.player.pay(cash);
     GAME.progress.gainXP(xp);
     p.st.jobs = (p.st.jobs || 0) + 1;
     /* working teaches you a little of both, slowly */
-    p.lab = Math.round((p.lab + 0.55) * 100) / 100;
+    p.dex = Math.round((p.dex + 0.55) * 100) / 100;
     p.iq = Math.round((p.iq + 0.12) * 100) / 100;
     GAME.feed.log('job', j.name + '. (+' + money(cash) + ', +' + xp + ' xp)');
     return { ok: true, cash: cash, xp: xp, name: j.name, desc: j.desc };
@@ -10182,6 +11002,7 @@ GAME.jail = (function () {
     p.st.busts++;
     GAME.feed.newsFrom('bustOut', 'jail', { who: p.name, other: n.name, amount: money(cost), city: p.city });
     GAME.feed.log('jail', 'You posted ' + money(cost) + ' to spring ' + n.name + '.');
+    GAME.contracts.note('freed', { id: n.id });
     return { ok: true, cost: cost, name: n.name };
   }
 
@@ -10209,6 +11030,7 @@ GAME.jail = (function () {
       GAME.progress.gainXP(xp);
       GAME.feed.newsFrom('bustOut', 'jail', { who: p.name, other: n.name, city: p.city });
       GAME.feed.log('jail', 'You broke ' + n.name + ' out of the can. (+' + xp + ' xp)');
+      GAME.contracts.note('freed', { id: n.id });
       return { ok: true, name: n.name, xp: xp };
     }
     p.st.bustFail++;
@@ -11593,10 +12415,10 @@ GAME.fence = (function () {
     p.truckKit.ammo -= 1;
     if (p.truckKit.ammo <= 0) delete p.truckKit.ammo;
 
-    var got = rint(bd.units[0], bd.units[1]) + Math.min(3, Math.floor((p.lab || 10) / 250));
+    var got = rint(bd.units[0], bd.units[1]) + Math.min(3, Math.floor((p.dex || 10) / 250));
     p.goodsUnits = units() + got;
     p.st.runs = (p.st.runs || 0) + 1;
-    p.lab = Math.round((p.lab + 0.2) * 100) / 100;
+    p.dex = Math.round((p.dex + 0.2) * 100) / 100;
     GAME.progress.gainXP(Math.max(1, Math.round(got * 0.8)));
     GAME.feed.log('fence', bd.job + ': ' + got + ' units off the back. ' + p.goodsUnits + ' in the lockup.');
     return { ok: true, got: got, total: p.goodsUnits, job: bd.job, band: bd };
@@ -11670,7 +12492,7 @@ GAME.school = (function () {
     if (!cur) return { err: 'You are not enrolled.' };
     if (!cur.done) return { err: 'The course runs for another ' + clock(cur.until - NOW()) + '.' };
     p.iq = Math.round((p.iq + cur.cls.iq) * 100) / 100;
-    if (cur.cls.lab) p.lab = Math.round((p.lab + cur.cls.lab) * 100) / 100;
+    if (cur.cls.lab) p.dex = Math.round((p.dex + cur.cls.lab) * 100) / 100;
     p.school = null;
     p.st.classes = (p.st.classes || 0) + 1;
     GAME.progress.gainXP(Math.round(cur.cls.iq * 0.6));
@@ -12011,6 +12833,232 @@ GAME.season = (function () {
 })();
 
 
+/* ===== 44-oc.js ===== */
+/* ============================================================
+   44-oc.js :: Organised Crime
+   A family job needs a crew, and the crew are other players. You
+   pick who fills each role out of your own family, and every one
+   of them rolls against their own stats. Bring a driver who cannot
+   drive and the whole thing comes apart on the ramp.
+   ============================================================ */
+
+GAME.oc = (function () {
+
+  var STATLABEL = { str: 'Strength', def: 'Guard', spd: 'Agility', dex: 'Labour', iq: 'IQ' };
+
+  function list() { return DATA.oc || []; }
+  function get(id) {
+    var l = list();
+    for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+    return null;
+  }
+
+  function cools() { return S.ocCool || (S.ocCool = {}); }
+  function cooldownLeft(famId, jobId) {
+    return Math.max(0, (cools()[famId + ':' + jobId] || 0) - NOW());
+  }
+  function setCooldown(famId, job) {
+    cools()[famId + ':' + job.id] = NOW() + (job.cooldownH || 4) * HOUR;
+  }
+
+  /* Who in your family is available to be put on a job. */
+  function bench() {
+    var f = GAME.family.mine();
+    if (!f) return [];
+    return GAME.family.membersOf(f).filter(function (m) {
+      return m.id !== 0 && !m.dead && !GAME.ladder.busy(m);
+    });
+  }
+
+  /* How likely one crew member is to hold up their end. */
+  function rolePass(member, role) {
+    if (!member) return 0;
+    var have = member[role.stat] || 10;
+    var need = role.need || 1;
+    var r = have / need;
+    /* well over the bar is close to certain, well under is close to hopeless */
+    return clamp(0.10 + 0.85 * (r / (r + 0.85)), 0.03, 0.97);
+  }
+
+  function bestFor(role, taken) {
+    var pool = bench(), best = null;
+    for (var i = 0; i < pool.length; i++) {
+      var m = pool[i];
+      if (taken[m.id]) continue;
+      if (!best || (m[role.stat] || 0) > (best[role.stat] || 0)) best = m;
+    }
+    return best;
+  }
+
+  /* The crew you have picked, as an id per role. */
+  function crew() { return S.ocCrew || (S.ocCrew = {}); }
+  function assign(roleId, memberId) {
+    var c = crew();
+    /* nobody works two jobs at once */
+    for (var k in c) if (c.hasOwnProperty(k) && c[k] === memberId) delete c[k];
+    if (memberId === null || memberId === undefined || memberId === '') delete c[roleId];
+    else c[roleId] = Number(memberId);
+  }
+  function autoFill(job) {
+    var c = {}, taken = {};
+    for (var i = 0; i < job.roles.length; i++) {
+      var m = bestFor(job.roles[i], taken);
+      if (m) { c[job.roles[i].id] = m.id; taken[m.id] = 1; }
+    }
+    S.ocCrew = c;
+    return c;
+  }
+  function clearCrew() { S.ocCrew = {}; }
+
+  function readiness(job) {
+    if (!job || !job.roles) return { rows: [], filled: 0, enough: false, chance: 0 };
+    var c = crew(), filled = 0, product = 1, rows = [];
+    for (var i = 0; i < job.roles.length; i++) {
+      var role = job.roles[i];
+      var m = c[role.id] ? byId(c[role.id]) : null;
+      var p = m ? rolePass(m, role) : 0;
+      if (m) filled++;
+      product *= (m ? p : 0.0001);
+      rows.push({ role: role, member: m, chance: p });
+    }
+    /* a job the boss turns up to personally goes better */
+    var mine = GAME.family.mine();
+    var lead = mine && mine.leader === 0 ? 1.05 : 1;
+    return {
+      rows: rows, filled: filled,
+      enough: filled >= (job.minCrew || job.roles.length) && filled === job.roles.length,
+      chance: clamp(Math.pow(product, 0.72) * lead, 0.01, 0.96)
+    };
+  }
+
+  function canRun(job) {
+    var f = GAME.family.mine();
+    if (!f) return 'You need a family to put a crew together.';
+    if (!job) return 'No such job.';
+    if (S.player.level < (job.lvl || 1)) return 'You need to be level ' + job.lvl + '.';
+    var b = GAME.player.blocked();
+    if (b) return 'You cannot go anywhere right now.';
+    if (S.player.nerve < 4) return 'Sitting down a crew takes 4 Brave.';
+    var cd = cooldownLeft(f.id, job.id);
+    if (cd > 0) return 'Your family ran this one recently. Wait ' + clock(cd) + '.';
+    var r = readiness(job);
+    if (!r.enough) return 'Every role has to be filled. ' + r.filled + ' of ' + job.roles.length + ' so far.';
+    return null;
+  }
+
+  function run(jobId) {
+    var job = get(jobId);
+    var err = canRun(job);
+    if (err) return { err: err };
+    var f = GAME.family.mine(), p = S.player;
+    var r = readiness(job);
+
+    p.nerve -= 4;
+    setCooldown(f.id, job);
+
+    /* every role rolls on its own, then the job rolls on the crew */
+    var results = [], weak = null;
+    for (var i = 0; i < r.rows.length; i++) {
+      var row = r.rows[i];
+      var okRole = chance(row.chance);
+      results.push({ role: row.role, member: row.member, ok: okRole, chance: row.chance });
+      if (!okRole && (!weak || row.chance < weak.chance)) weak = { role: row.role, member: row.member, chance: row.chance };
+    }
+    var blown = results.filter(function (x) { return !x.ok; }).length;
+    /* one slip can be covered; two and it falls apart */
+    var success = blown === 0 || (blown === 1 && chance(0.45));
+
+    var out = { job: job, results: results, weak: weak, success: success, blown: blown, cut: 0, xp: 0, jailed: false };
+
+    if (success) {
+      var pot = rint(job.cut[0], job.cut[1]);
+      var heads = r.rows.length + 1;                 // the crew, plus you
+      var yours = Math.round(pot * (0.30 + 0.70 / heads));
+      out.pot = pot;
+      out.cut = yours;
+      GAME.player.pay(yours);
+      out.xp = rint(job.xp[0], job.xp[1]);
+      GAME.progress.gainXP(out.xp);
+      p.st.ocDone = (p.st.ocDone || 0) + 1;
+      p.respect += Math.max(2, Math.round(job.lvl / 3));
+      var share = Math.round((pot - yours) / Math.max(1, r.rows.length));
+      for (var k = 0; k < r.rows.length; k++) {
+        var m = r.rows[k].member;
+        if (!m) continue;
+        m.money += share;
+        m.op = clamp(m.op + rint(4, 11), -100, 100);
+        GAME.npc.gainXP(m, Math.round(out.xp * 0.6));
+      }
+      if (f) { f.money = (f.money || 0) + Math.round(pot * 0.1); f.respect += Math.round(job.lvl / 2); }
+      GAME.feed.newsFrom('crimeWin', 'crime', { who: p.name, family: f.name, amount: money(pot), n: heads, city: p.city });
+      GAME.feed.log('oc', job.name + ' came off. Your cut was ' + money(yours) + '.');
+    } else {
+      p.st.ocFail = (p.st.ocFail || 0) + 1;
+      /* the crew take it personally, and somebody usually gets pinched */
+      for (var q = 0; q < r.rows.length; q++) {
+        var mm = r.rows[q].member;
+        if (!mm) continue;
+        mm.op = clamp(mm.op - rint(3, 9), -100, 100);
+        if (chance(0.5)) {
+          mm.jailUntil = NOW() + rint(job.jailS[0], job.jailS[1]) * 1000;
+          mm.jailWhy = job.name;
+        }
+      }
+      if (chance(0.55)) {
+        var secs = rint(job.jailS[0], job.jailS[1]);
+        GAME.player.jail(secs * 1000, 'It went wrong on ' + job.name + '.', S.player.level * 2000);
+        out.jailed = true;
+        out.jailSecs = secs;
+      }
+      GAME.feed.log('oc', job.name + ' fell apart. ' + (weak && weak.member ? weak.member.name + ' did not hold up their end.' : ''));
+      GAME.feed.newsFrom('bustFail', 'jail', { who: p.name, other: (weak && weak.member ? weak.member.name : f.name), family: f.name, city: p.city });
+    }
+    return out;
+  }
+
+  /* The AI families run their own jobs, and you read about it. */
+  function npcTick(hours) {
+    var expected = Math.max(0, hours) * 0.22;
+    var n = Math.floor(expected);
+    if (chance(expected - n)) n++;
+    for (var i = 0; i < Math.min(n, 40); i++) {
+      var f = pick(S.fams);
+      if (!f) continue;
+      var members = GAME.family.membersOf(f).filter(function (m) { return m.id !== 0 && !m.dead && !GAME.ladder.busy(m); });
+      if (members.length < 2) continue;
+      var pool = list().filter(function (j) { return members.length >= (j.minCrew || 2); });
+      if (!pool.length) continue;
+      /* they pick something their crew can actually handle */
+      var avg = members.reduce(function (a, m) { return a + m.level; }, 0) / members.length;
+      var job = pick(pool.filter(function (j) { return j.lvl <= avg * 1.3; })) || pool[0];
+      if (cooldownLeft(f.id, job.id) > 0) continue;
+      setCooldown(f.id, job);
+      var ok = chance(clamp(0.25 + (avg / Math.max(1, job.lvl)) * 0.4, 0.1, 0.85));
+      if (ok) {
+        var pot = rint(job.cut[0], job.cut[1]);
+        var share = Math.round(pot / members.length);
+        for (var m2 = 0; m2 < members.length; m2++) {
+          members[m2].money += share;
+          GAME.npc.gainXP(members[m2], Math.round(rint(job.xp[0], job.xp[1]) * 0.6));
+        }
+        f.money = (f.money || 0) + Math.round(pot * 0.1);
+        if (chance(0.5)) GAME.feed.newsFrom('crimeWin', 'crime', { who: (byId(f.leader) || {}).name || f.name, family: f.name, amount: money(pot), n: members.length, city: f.name });
+      } else if (chance(0.6)) {
+        var v = pick(members);
+        if (v) { v.jailUntil = NOW() + rint(job.jailS[0], job.jailS[1]) * 1000; v.jailWhy = job.name; }
+        if (chance(0.35)) GAME.feed.newsFrom('bustFail', 'jail', { who: (v || {}).name || f.name, other: f.name, family: f.name, city: (v || {}).city });
+      }
+    }
+  }
+
+  return {
+    list: list, get: get, bench: bench, crew: crew, assign: assign, autoFill: autoFill,
+    clearCrew: clearCrew, readiness: readiness, canRun: canRun, run: run,
+    cooldownLeft: cooldownLeft, rolePass: rolePass, npcTick: npcTick, STATLABEL: STATLABEL
+  };
+})();
+
+
 /* ===== 45-normalize.js ===== */
 /* ============================================================
    45-normalize.js :: reconcile the content tables
@@ -12109,7 +13157,6 @@ GAME.normalize = (function () {
       var gm = DATA.gym[g];
       gm.price = gm.price || 0; gm.lvl = gm.lvl || 1;
       gm.str = gm.str || 0; gm.def = gm.def || 0; gm.spd = gm.spd || 0; gm.dex = gm.dex || 0;
-      gm.lab = gm.lab === undefined ? Math.max(0, (gm.dex || 0) * 0.7) : gm.lab;
       gm.desc = gm.desc || '';
     }
     DATA.gym.sort(function (a, b) { return a.price - b.price; });
@@ -12187,6 +13234,34 @@ GAME.normalize = (function () {
       }
     }
 
+    /* ---- the two newer systems ---- */
+    DATA.oc = arr(DATA.oc);
+    if (!DATA.oc.length) DATA.oc = fallbackOC();
+    for (var o = 0; o < DATA.oc.length; o++) {
+      var J = DATA.oc[o];
+      J.lvl = J.lvl || 1;
+      J.roles = arr(J.roles);
+      if (!J.roles.length) J.roles = [{ id: 'muscle', name: 'Muscle', stat: 'str', need: 20, desc: '' }];
+      for (var ro = 0; ro < J.roles.length; ro++) {
+        var R2 = J.roles[ro];
+        R2.id = R2.id || ('role' + ro);
+        R2.name = R2.name || R2.id;
+        if (['str', 'def', 'spd', 'dex', 'iq'].indexOf(R2.stat) < 0) R2.stat = 'str';
+        R2.need = R2.need || 20;
+      }
+      J.minCrew = Math.min(J.minCrew || J.roles.length, J.roles.length);
+      J.cut = arr(J.cut).length === 2 ? J.cut : [1000, 4000];
+      J.xp = arr(J.xp).length === 2 ? J.xp : [10, 30];
+      J.jailS = arr(J.jailS).length === 2 ? J.jailS : [120, 600];
+      J.cooldownH = J.cooldownH || 4;
+      J.brief = J.brief || ''; J.ok = J.ok || 'It comes off clean.';
+      J.fail = J.fail || 'It does not come off.'; J.caught = J.caught || 'Everybody goes down.';
+    }
+    DATA.oc.sort(function (a, b) { return a.lvl - b.lvl; });
+
+    DATA.contracts = DATA.contracts || {};
+    if (!arr(DATA.contracts.kinds).length) DATA.contracts.kinds = null;   // engine falls back
+
     DATA.forum = DATA.forum || {};
     if (!arr(DATA.forum.boards).length) {
       DATA.forum.boards = [
@@ -12251,10 +13326,12 @@ GAME.normalize = (function () {
   /* How long a level ought to take. Minutes at the start, weeks at the top. */
   function daysForLevel(L) { return 0.05 + 0.00035 * Math.pow(L, 2.4); }
 
+  var CURVE_LEVELS = 600;   // generated; past this the engine extrapolates
+
   function fitLevelCurve() {
     var table = [0], days = [0];
     var total = 0, d = 0;
-    for (var L = 2; L <= 100; L++) {
+    for (var L = 2; L <= CURVE_LEVELS; L++) {
       var dl = daysForLevel(L - 1);
       var gap = dailyXP(L - 1) * dl;
       /* round to something that reads like a game number */
@@ -12268,18 +13345,39 @@ GAME.normalize = (function () {
     DATA.levels.fitted = true;
   }
 
-  /* Rank titles are spread across the whole level range so every one of
-     them is reachable, weighted so the early promotions come quickly. */
+  /* Rank titles spread across levels 1-100 so every authored one is
+     reachable, then prestige titles carry on past the old cap for as long
+     as anybody keeps playing. */
+  var PRESTIGE = [
+    'Untouchable', 'The Quiet Man', 'Ghost of the Waterfront', 'Emeritus',
+    'Old Money', 'The Whisper', 'Chairman of the Board', 'The Last Word',
+    'Patron Saint of Thieves', 'Myth'
+  ];
+  var ROMAN = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII', ' IX', ' X'];
+
   function fitRankCurve() {
-    var r = DATA.ranks, n = r.length, t = DATA.levels.table;
-    if (n < 2) return;
+    var t = DATA.levels.table;
+    /* keep only the authored ranks; prestige is regenerated each boot */
+    var r = DATA.ranks.filter(function (x) { return !x.prestige; });
+    var n = r.length;
+    if (n < 2) { DATA.ranks = r; return; }
     for (var i = 0; i < n; i++) {
       var lvl = 1 + Math.round(99 * Math.pow(i / (n - 1), 1.25));
       r[i].xp = t[clamp(lvl, 1, 100) - 1];
       r[i].lvl = lvl;
     }
-    /* keep it strictly increasing even if two ranks land on one level */
-    for (var k = 1; k < n; k++) if (r[k].xp <= r[k - 1].xp) r[k].xp = r[k - 1].xp + 1;
+    /* one more title every twenty levels, for ever */
+    var step = 20, pi = 0;
+    for (var L = 120; L <= t.length; L += step) {
+      var name = PRESTIGE[pi % PRESTIGE.length] + ROMAN[Math.floor(pi / PRESTIGE.length) % ROMAN.length];
+      r.push({
+        name: name, lvl: L, xp: t[L - 1], prestige: true,
+        blurb: 'Past the point where the titles meant anything. They still made one up for you.'
+      });
+      pi++;
+    }
+    for (var k = 1; k < r.length; k++) if (r[k].xp <= r[k - 1].xp) r[k].xp = r[k - 1].xp + 1;
+    DATA.ranks = r;
   }
 
   /* ---- last-resort tables so the game always boots ---- */
@@ -12311,11 +13409,41 @@ GAME.normalize = (function () {
   }
   function fallbackGyms() {
     return [
-      { id: 'ymca', name: 'The Old YMCA', lvl: 1, price: 0, str: 1, def: 1, spd: 1, dex: 1, lab: 1, desc: 'Free, and worth every penny.' },
-      { id: 'boxing', name: "Sal's Boxing Club", lvl: 8, price: 60000, str: 2.4, def: 1.2, spd: 2.1, dex: 0.9, lab: 0.6, desc: 'Heavy bags and a hard old man shouting.' },
-      { id: 'iron', name: 'Iron House', lvl: 20, price: 2400000, str: 3.6, def: 3.2, spd: 1.4, dex: 1.4, lab: 1.2, desc: 'Chalk, rust and no mirrors.' }
+      { id: 'ymca', name: 'The Old YMCA', lvl: 1, price: 0, str: 1, def: 1, spd: 1, dex: 1, desc: 'Free, and worth every penny.' },
+      { id: 'boxing', name: "Sal's Boxing Club", lvl: 8, price: 60000, str: 2.4, def: 1.2, spd: 2.1, dex: 0.9, desc: 'Heavy bags and a hard old man shouting.' },
+      { id: 'iron', name: 'Iron House', lvl: 20, price: 2400000, str: 3.6, def: 3.2, spd: 1.4, dex: 1.4, desc: 'Chalk, rust and no mirrors.' }
     ];
   }
+  function fallbackOC() {
+    return [
+      { id: 'liquorstore', name: 'Turn Over a Liquor Store', lvl: 3, minCrew: 2, cut: [4000, 11000], xp: [40, 90], cooldownH: 4, jailS: [120, 600],
+        roles: [{ id: 'driver', name: 'Driver', stat: 'spd', need: 30, desc: 'Engine running, facing the right way.' },
+                { id: 'muscle', name: 'Muscle', stat: 'str', need: 40, desc: 'Says nothing. Does not have to.' }],
+        brief: 'Family-run place on the corner. No alarm, no camera, one till.',
+        ok: 'Ninety seconds, door to door. The old man never even reached for the phone.',
+        fail: 'The till was empty and the safe was on a timer nobody mentioned.',
+        caught: 'A squad car was parked round the side the whole time.' },
+      { id: 'armouredvan', name: 'Take an Armoured Van', lvl: 22, minCrew: 3, cut: [180000, 420000], xp: [900, 1800], cooldownH: 12, jailS: [900, 2700],
+        roles: [{ id: 'wheel', name: 'Wheelman', stat: 'spd', need: 300, desc: 'Two exits, and he has driven both.' },
+                { id: 'muscle', name: 'Muscle', stat: 'str', need: 380, desc: 'For the doors, and for the guard.' },
+                { id: 'lookout', name: 'Lookout', stat: 'iq', need: 200, desc: 'Counts the schedule, not the money.' }],
+        brief: 'Same route, same time, every Thursday. Somebody should have changed that.',
+        ok: 'Doors open, bags out, gone before the second guard finished his sandwich.',
+        fail: 'They ran the route backwards this week. You watched it drive away.',
+        caught: 'It was not a payroll run. It was a trap with a payroll paint job.' },
+      { id: 'goldvault', name: 'Empty a Gold Vault', lvl: 70, minCrew: 5, cut: [40000000, 110000000], xp: [90000, 180000], cooldownH: 72, jailS: [3000, 9000],
+        roles: [{ id: 'face', name: 'The Face', stat: 'iq', need: 4000, desc: 'Walks in the front. Signs something.' },
+                { id: 'crack', name: 'Safecracker', stat: 'dex', need: 5000, desc: 'Old hands, older ears.' },
+                { id: 'alarm', name: 'Alarm Man', stat: 'iq', need: 4500, desc: 'Knows which wire is the lie.' },
+                { id: 'muscle', name: 'Muscle', stat: 'str', need: 6000, desc: 'In case the plan needs help.' },
+                { id: 'wheel', name: 'Wheelman', stat: 'spd', need: 4500, desc: 'Idling on the ramp with the boot open.' }],
+        brief: 'Nine tonnes of it, two floors down, behind a door that has never been opened by anybody who was not supposed to.',
+        ok: 'You are downstairs before the shift change and out before anybody counts. It takes three trips.',
+        fail: 'The inner door had a second lock nobody drew on the plan.',
+        caught: 'Somebody talked. There were men waiting on both stairwells.' }
+    ];
+  }
+
   function fallbackCities() {
     return [
       { id: 'newyork', name: 'New York', country: 'USA', cost: 0, flightMin: 0, desc: 'Home.', bonus: { crime: 0, pay: 0 }, exclusive: [] },
@@ -12325,6 +13453,262 @@ GAME.normalize = (function () {
   }
 
   return { run: run };
+})();
+
+
+/* ===== 46-contracts.js ===== */
+/* ============================================================
+   46-contracts.js :: The Notice Board
+   Work the other two hundred want doing and will not do
+   themselves. Somebody wants a name put in a hospital bed.
+   Somebody wants their brother-in-law bailed out. Somebody wants
+   a piece they cannot be seen buying. Take it, do it, get paid -
+   and they remember either way.
+   ============================================================ */
+
+GAME.contracts = (function () {
+
+  var MAX_ACTIVE = 3;
+
+  var FALLBACK_KINDS = [
+    { id: 'hit', name: 'Put somebody down', reward: [0.9, 1.7], rep: 9 },
+    { id: 'mug', name: 'Take money off somebody', reward: [0.7, 1.3], rep: 6 },
+    { id: 'bail', name: 'Get somebody out', reward: [0.5, 1.0], rep: 12 },
+    { id: 'fetch', name: 'Get hold of something', reward: [0.6, 1.2], rep: 7 },
+    { id: 'crime', name: 'Show me you can work', reward: [0.5, 1.1], rep: 4 },
+    { id: 'gym', name: 'Put the hours in', reward: [0.5, 1.0], rep: 4 },
+    { id: 'protect', name: 'Keep somebody standing', reward: [0.8, 1.5], rep: 10 }
+  ];
+
+  function kinds() {
+    var k = (DATA.contracts && DATA.contracts.kinds) || null;
+    return (k && k.length) ? k : FALLBACK_KINDS;
+  }
+  function kind(id) {
+    var k = kinds();
+    for (var i = 0; i < k.length; i++) if (k[i].id === id) return k[i];
+    return FALLBACK_KINDS[0];
+  }
+  function bankLine(map, id, fallback) {
+    var b = DATA.contracts && DATA.contracts[map] && DATA.contracts[map][id];
+    if (b && b.length) return pick(b);
+    return fallback;
+  }
+
+  function board() { return S.board || (S.board = []); }
+  function active() { return S.myContracts || (S.myContracts = []); }
+
+  /* What a job of this size is worth to somebody at your level. */
+  function baseRate() { return Math.max(4000, Math.round(1200 * Math.pow(S.player.level, 1.9))); }
+
+  function describe(c) {
+    switch (c.kind) {
+      case 'hit': return 'Put ' + c.targetName + ' in a hospital bed.';
+      case 'mug': return 'Take money off ' + c.targetName + '.';
+      case 'bail': return 'Get ' + c.targetName + ' out of jail.';
+      case 'fetch': return 'Get hold of a ' + c.itemName + ' and hand it over.';
+      case 'crime': return 'Pull off ' + c.n + ' crimes.';
+      case 'gym': return 'Put ' + fmt(c.n) + ' points on your ' + (GAME.oc.STATLABEL[c.stat] || c.stat) + '.';
+      case 'protect': return 'Keep ' + c.targetName + ' out of hospital for ' + Math.round(c.ms / HOUR) + ' hours.';
+    }
+    return 'Do the thing.';
+  }
+
+  function make(now) {
+    var poster = pick(S.npcs.filter(function (n) { return !n.dead; }));
+    if (!poster) return null;
+    var k = pick(kinds());
+    var pool = S.npcs.filter(function (n) { return !n.dead && n.id !== poster.id; });
+    var target = pick(pool);
+    if (!target) return null;
+
+    var c = {
+      id: (S.nextConId = (S.nextConId || 1) + 1),
+      kind: k.id, by: poster.id, byName: poster.name,
+      posted: now, expires: now + rint(6, 60) * HOUR,
+      rep: k.rep || 6
+    };
+
+    if (k.id === 'bail') {
+      /* only worth posting if somebody is actually inside */
+      var inside = S.npcs.filter(function (n) { return n.jailUntil > now && n.id !== poster.id; });
+      target = pick(inside) || target;
+      if (target.jailUntil <= now) { target.jailUntil = now + rint(300, 2400) * 1000; target.jailWhy = 'Nobody is saying.'; }
+    }
+    if (k.id === 'protect') c.ms = rint(2, 10) * HOUR;
+    if (k.id === 'fetch') {
+      var it = pick(GAME.items.all().filter(function (i) { return i.stock && i.lvl <= S.player.level + 6; }));
+      if (!it) return null;
+      c.itemId = it.id; c.itemName = it.name;
+    }
+    if (k.id === 'crime') c.n = rint(6, 30);
+    if (k.id === 'gym') {
+      c.stat = pick(['str', 'def', 'spd', 'dex']);
+      c.n = Math.max(3, Math.round((S.player[c.stat] || 10) * rflt(0.04, 0.14)));
+    }
+    c.target = target.id;
+    c.targetName = target.name;
+
+    var band = k.reward || [0.6, 1.2];
+    c.reward = Math.round(baseRate() * rflt(band[0], band[1]) * (0.7 + poster.p.generosity * 0.8));
+    c.points = rint(2, 18);
+
+    var vars = {
+      target: c.targetName, other: pick(S.npcs).name, item: c.itemName || 'a piece',
+      amount: money(c.reward), n: c.n || rint(2, 20), city: poster.city,
+      family: (famById(poster.fam) || {}).name || 'my people', me: S.player.name
+    };
+    c.title = GAME.npc.style(poster, tpl(bankLine('titles', k.id, k.name), vars), true);
+    c.body = GAME.npc.style(poster, tpl(bankLine('bodies', k.id, describe(c) + '\nPays ' + money(c.reward) + '.'), vars));
+    return c;
+  }
+
+  function accept(id) {
+    var b = board(), p = S.player;
+    if (active().length >= MAX_ACTIVE) return { err: 'You are carrying ' + MAX_ACTIVE + ' jobs already. Finish one.' };
+    for (var i = 0; i < b.length; i++) {
+      if (b[i].id !== id) continue;
+      var c = b.splice(i, 1)[0];
+      c.taken = NOW();
+      /* snapshot whatever we have to measure against */
+      c.snap = {
+        crimes: p.st.crimes,
+        stat: c.stat ? (p[c.stat] || 0) : 0,
+        hosp: c.kind === 'protect' ? (byId(c.target) || {}).hospUntil || 0 : 0
+      };
+      if (c.kind === 'protect') c.until = NOW() + c.ms;
+      active().push(c);
+      var poster = byId(c.by);
+      if (poster) {
+        GAME.feed.log('board', 'You took ' + poster.name + "'s job: " + describe(c));
+        if (chance(0.5)) GAME.feed.say(poster, GAME.npc.style(poster, tpl(
+          (DATA.contracts && DATA.contracts.accept && pick(DATA.contracts.accept)) || 'ok {me} is on it',
+          { me: p.name, target: c.targetName })));
+      }
+      return { ok: true, c: c };
+    }
+    return { err: 'Somebody else took it.' };
+  }
+
+  function progress(c) {
+    var p = S.player;
+    switch (c.kind) {
+      case 'crime': return { have: p.st.crimes - c.snap.crimes, need: c.n };
+      case 'gym': return { have: Math.max(0, Math.round((p[c.stat] || 0) - c.snap.stat)), need: c.n };
+      case 'fetch': return { have: GAME.items.count(c.itemId), need: 1 };
+      case 'protect': return { have: Math.max(0, Math.min(c.ms, NOW() - c.taken)), need: c.ms, time: true };
+      default: return { have: c.done ? 1 : 0, need: 1 };
+    }
+  }
+
+  function isDone(c) {
+    var pr = progress(c);
+    if (c.kind === 'protect') return NOW() >= c.until && !c.failed;
+    return pr.have >= pr.need;
+  }
+
+  /* Called by the rest of the game when something happens that a
+     contract might have been waiting for. */
+  function note(what, data) {
+    var a = active();
+    for (var i = 0; i < a.length; i++) {
+      var c = a[i];
+      if (what === 'hospitalised' && c.kind === 'hit' && data.id === c.target) c.done = true;
+      if (what === 'mugged' && c.kind === 'mug' && data.id === c.target && data.amount > 0) c.done = true;
+      if (what === 'freed' && c.kind === 'bail' && data.id === c.target) c.done = true;
+      if (what === 'hospitalised' && c.kind === 'protect' && data.id === c.target && NOW() < c.until) c.failed = true;
+    }
+  }
+
+  function claim(id) {
+    var a = active(), p = S.player;
+    for (var i = 0; i < a.length; i++) {
+      var c = a[i];
+      if (c.id !== id) continue;
+      if (c.failed) return { err: 'You let that one go wrong.' };
+      if (!isDone(c)) return { err: 'Not finished yet.' };
+      if (c.kind === 'fetch') {
+        if (!GAME.items.count(c.itemId)) return { err: 'You are not carrying the ' + c.itemName + '.' };
+        GAME.items.remove(c.itemId, 1);
+      }
+      a.splice(i, 1);
+      GAME.player.pay(c.reward);
+      GAME.points.give(c.points);
+      GAME.progress.gainXP(Math.max(3, Math.round(c.reward / 900)));
+      p.st.contracts = (p.st.contracts || 0) + 1;
+      var poster = byId(c.by);
+      if (poster) {
+        poster.op = clamp(poster.op + c.rep, -100, 100);
+        poster.grudge = Math.max(0, poster.grudge - 6);
+        if (chance(0.55)) GAME.feed.say(poster, GAME.npc.style(poster, tpl(
+          (DATA.contracts && DATA.contracts.done && pick(DATA.contracts.done)) || 'nice work {me}, sending it now',
+          { me: p.name, target: c.targetName })));
+      }
+      GAME.feed.log('board', 'Paid out: ' + money(c.reward) + ' and ' + c.points + ' points from ' + c.byName + '.');
+      GAME.feed.newsFrom('milestone', 'money', { who: p.name, other: c.byName, amount: money(c.reward), n: p.st.contracts, city: p.city });
+      return { ok: true, c: c };
+    }
+    return { err: 'Not one of yours.' };
+  }
+
+  function drop(id, quiet) {
+    var a = active();
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id !== id) continue;
+      var c = a.splice(i, 1)[0];
+      var poster = byId(c.by);
+      if (poster) {
+        poster.op = clamp(poster.op - Math.round(c.rep * 0.8), -100, 100);
+        poster.grudge = clamp(poster.grudge + 4, 0, 100);
+        if (!quiet && chance(0.5)) GAME.feed.say(poster, GAME.npc.style(poster, tpl(
+          (DATA.contracts && DATA.contracts.failed && pick(DATA.contracts.failed)) || '{me} took my job and did nothing. remember that',
+          { me: S.player.name, target: c.targetName })));
+      }
+      GAME.feed.log('board', 'You dropped ' + c.byName + "'s job.");
+      return { ok: true };
+    }
+    return { err: 'Not one of yours.' };
+  }
+
+  function tick(now) {
+    var b = board();
+    /* postings come and go */
+    for (var i = b.length - 1; i >= 0; i--) if (b[i].expires <= now) b.splice(i, 1);
+    while (b.length < 12 && chance(0.35)) {
+      var c = make(now);
+      if (c) b.push(c); else break;
+    }
+    /* jobs you are sitting on go stale, and the poster notices */
+    var a = active();
+    for (var k = a.length - 1; k >= 0; k--) {
+      var mine = a[k];
+      if (mine.kind === 'protect') {
+        var t = byId(mine.target);
+        if (t && t.hospUntil > mine.taken && NOW() < mine.until) mine.failed = true;
+      }
+      if (now > mine.taken + 24 * HOUR && !isDone(mine)) {
+        drop(mine.id, false);
+      } else if (!mine.nudged && now > mine.taken + 8 * HOUR && !isDone(mine)) {
+        mine.nudged = true;
+        var poster = byId(mine.by);
+        if (poster) GAME.mail.fromNpc(poster, 'threat', {});
+      }
+    }
+  }
+
+  function seed(now) {
+    S.board = []; S.myContracts = []; S.nextConId = 1;
+    for (var i = 0; i < rint(6, 11); i++) {
+      var c = make(now - rflt(0, 8) * HOUR);
+      if (c) S.board.push(c);
+    }
+  }
+
+  return {
+    board: board, active: active, kinds: kinds, describe: describe, progress: progress,
+    isDone: isDone, accept: accept, claim: claim, drop: drop, tick: tick, seed: seed,
+    note: note, MAX_ACTIVE: MAX_ACTIVE
+  };
 })();
 
 
@@ -12522,7 +13906,7 @@ GAME.npc = (function () {
   function recompute(n) {
     if (n.id === 0) return;
     n.gear = GAME.items.gearPower(n);
-    n.healthMax = Math.max(50, Math.round(100 + (n.level - 1) * 12));
+    n.healthMax = Math.max(50, Math.round(100 + (n.level - 1) * 12.25));
     if (n.health > n.healthMax) n.health = n.healthMax;
   }
 
@@ -12545,7 +13929,7 @@ GAME.npc = (function () {
     if (h > 2.5 && h < 6.5) hourFactor *= 0.10;
     /* somebody who barely played their account is not suddenly going to
        start now - the roster keeps its dead weight */
-    var stickiness = clamp(0.20 + (n.pf === undefined ? 0.7 : n.pf) * 1.7, 0.08, 1);
+    var stickiness = clamp(0.42 + (n.pf === undefined ? 0.7 : n.pf) * 1.1, 0.25, 1);
     return clamp(n.p.activity * hourFactor * weekend * stickiness, 0, 1);
   }
 
@@ -12553,10 +13937,13 @@ GAME.npc = (function () {
   function catchUpPools(n, now) {
     var last = n.lastRegen || n.lastOnline || now;
     var mins = Math.min((now - last) / MIN, 60 * 24 * 3);
+    var lv = n.level - 1;
+    n.energyMax = Math.round(30 + 2.05 * lv);
     n.energy = Math.min(n.energyMax, (n.energy || 0) + Math.floor(mins / 3));
-    n.nerve = Math.min(Math.round(5 + n.level * 0.34), (n.nerve || 0) + Math.floor(mins / 5));
-    n.will = Math.min(Math.round(12 + n.level), (n.will || 0) + Math.floor(mins / 12));
-    n.attacks = Math.min(Math.round(5 + n.level * 0.06), (n.attacks || 0) + Math.floor(mins / 20));
+    n.nerve = Math.min(Math.round(5 + 0.35 * lv), (n.nerve || 0) + Math.floor(mins / 5));
+    n.will = Math.min(Math.round(12 + 0.98 * lv), (n.will || 0) + Math.floor(mins / 12));
+    n.dexg = Math.min(Math.round(20 + 0.60 * lv), (n.dexg || 0) + Math.floor(mins / 8));
+    n.attacks = Math.min(Math.round(5 + 0.07 * lv), (n.attacks || 0) + Math.floor(mins / 20));
     if (n.hospUntil <= now && n.health < n.healthMax) {
       n.health = Math.min(n.healthMax, n.health + Math.floor(mins / 1.5) * Math.max(1, Math.round(n.healthMax / 100)));
     }
@@ -12753,11 +14140,9 @@ GAME.npc = (function () {
     var sets = Math.min(Math.floor(n.energy / 5), rint(1, 4));
     if (sets < 1) return;
     n.energy -= sets * 5;
-    var stat = pickW([['str', 1 + n.p.aggro], ['def', 1 + (1 - n.p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7], ['lab', 0.5]]);
-    var cur = n[stat] || 10;
-    var mult = clamp(1 + n.p.skill * 4.5 * Math.min(1, n.level / 45), 1, 6.5);
-    var per = mult * (1.6 / (1 + Math.pow(cur / 240, 0.82))) * (1 + Math.log(1 + n.level) / Math.LN10 * 0.22);
-    n[stat] = Math.round((cur + per * sets) * 100) / 100;
+    var stat = pickW([['str', 1 + n.p.aggro], ['def', 1 + (1 - n.p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7]]);
+    n.will = Math.max(0, (n.will || 0) - sets);
+    trainNpc(n, stat, sets);
   }
 
   function doAttack(n, now) {
@@ -12770,12 +14155,14 @@ GAME.npc = (function () {
 
   function gainNpcXP(n, xp) {
     n.xp = (n.xp || 0) + xp;
+    var ceiling = CFG.MAX_LEVEL > 0 ? CFG.MAX_LEVEL : 100000;
     var need = GAME.progress.xpForLevel(n.level + 1);
-    while (n.level < 100 && n.xp >= need) {
+    var guard = 0;
+    while (n.level < ceiling && n.xp >= need && guard++ < 400) {
       n.level++;
-      n.healthMax = Math.round(100 + (n.level - 1) * 12);
+      n.healthMax = Math.round(100 + (n.level - 1) * 12.25);
       n.health = n.healthMax;
-      n.energyMax = 50 + n.level * 2;
+      n.energyMax = Math.round(30 + 2.05 * (n.level - 1));
       need = GAME.progress.xpForLevel(n.level + 1);
       if (chance(0.30)) GAME.feed.newsFrom('rankUp', 'rank', { who: n.name, rank: GAME.progress.rankFor(n.xp).name, n: n.level, city: n.city });
       /* they upgrade their kit as they grow */
@@ -12787,6 +14174,41 @@ GAME.npc = (function () {
         recompute(n);
       }
     }
+  }
+
+  /* The gym an account has actually paid its way into. They train on the
+     same curve the player does - same multipliers, same diminishing
+     returns, same Will factor - so a level 30 account is a level 30
+     account whoever is driving it. */
+  function gymFor(n) {
+    var list = DATA.gym || [];
+    var best = list[0] || { str: 1, def: 1, spd: 1, dex: 1 };
+    var purse = (n.money || 0) + (n.bank || 0);
+    for (var i = 0; i < list.length; i++) {
+      var g = list[i];
+      if ((g.lvl || 1) > n.level) continue;
+      if (g.price > purse * (0.6 + n.p.greed * 1.4)) continue;
+      if ((g.str + g.def + g.spd + g.dex) > (best.str + best.def + best.spd + best.dex)) best = g;
+    }
+    return best;
+  }
+
+  function npcWillFactor(n) {
+    var max = Math.max(1, Math.round(12 + 0.98 * (n.level - 1)));
+    return 0.55 + 0.45 * clamp((n.will || 0) / max, 0, 1);
+  }
+
+  function trainNpc(n, stat, sets, willF) {
+    var g = gymFor(n);
+    var mult = g[stat] || 0;
+    if (!mult) { stat = 'str'; mult = g.str || 1; }
+    var cur = n[stat] || 10;
+    var per = mult
+      * (1.6 / (1 + Math.pow(cur / 240, 0.82)))
+      * (1 + Math.log(1 + n.level) / Math.LN10 * 0.22)
+      * (willF === undefined ? npcWillFactor(n) : willF);
+    n[stat] = Math.round((cur + per * sets) * 100) / 100;
+    return per * sets;
   }
 
   /* ---- bulk progression ------------------------------------------
@@ -12841,9 +14263,9 @@ GAME.npc = (function () {
     /* What they had when they sat down PLUS everything that trickled in
        while they were sitting there. Spending only the standing pool is
        what a session actually looks like for about ten seconds. */
-    var braveMax = Math.round(5 + n.level * 0.34);
-    var willMax = Math.round(12 + n.level);
-    var atkMax = Math.round(5 + n.level * 0.06);
+    var braveMax = Math.round(5 + 0.35 * (n.level - 1));
+    var willMax = Math.round(12 + 0.98 * (n.level - 1));
+    var atkMax = Math.round(5 + 0.07 * (n.level - 1));
     var brave = (n.nerve || 0) + minutes / 5;
     var will = (n.will || 0) + minutes / 12;
     var energy = (n.energy || 0) + minutes / 3;
@@ -12888,14 +14310,17 @@ GAME.npc = (function () {
     var wantAttacks = Math.min(Math.floor(attacks), Math.floor(energy * atkShare / 10));
     var gymEnergy = Math.max(0, energy - wantAttacks * 10);
     var sets = Math.floor(gymEnergy / 5 * clamp(0.4 + p.skill * 0.8, 0.15, 1));
+    sets = Math.min(sets, Math.floor(will));    // a set costs Will as well as Energy
     if (sets > 0) {
       energy -= sets * 5;
-      var stat = pickW([['str', 1 + p.aggro], ['def', 1 + (1 - p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7], ['lab', 0.5]]);
-      var cur = n[stat] || 10;
-      var mult = clamp(1 + p.skill * 4.5 * Math.min(1, n.level / 45), 1, 6.5);
-      var lb = 1 + Math.log(1 + n.level) / Math.LN10 * 0.22;
-      var per = mult * (1.6 / (1 + Math.pow(cur / 240, 0.82))) * lb;
-      n[stat] = Math.round((cur + per * sets) * 100) / 100;
+      var willF = 0.55 + 0.45 * clamp(will / Math.max(1, willMax), 0, 1);
+      will -= sets;
+      /* they spread their sets the way their temperament says they should */
+      var plan = [['str', 1 + p.aggro], ['def', 1 + (1 - p.aggro) * 0.8], ['spd', 0.8], ['dex', 0.7]];
+      var chunks = Math.min(3, sets);
+      for (var q = 0; q < chunks; q++) {
+        trainNpc(n, pickW(plan), Math.floor(sets / chunks), willF);
+      }
     }
 
     /* Fights. One in five is played out properly so the ladder really
@@ -13066,7 +14491,8 @@ GAME.npc = (function () {
     style: style, voice: voice, remember: remember, rivalry: rivalry, recompute: recompute,
     onlinePressure: onlinePressure, localHour: localHour, catchUpPools: catchUpPools,
     act: act, pickTarget: pickTarget, chatEvent: chatEvent, avatar: avatar, gainXP: gainNpcXP,
-    bulkProgress: bulkProgress, crimeChance: crimeChance, bestCrime: bestCrime, bestJob: bestJob
+    bulkProgress: bulkProgress, crimeChance: crimeChance, bestCrime: bestCrime, bestJob: bestJob,
+    gymFor: gymFor, trainNpc: trainNpc
   };
 })();
 
@@ -13142,36 +14568,32 @@ GAME.sim = (function () {
     S.counters.day = day;
     S.player.st.daysActive = (S.player.st.daysActive || 1) + 1;
 
+    /* People do drift away, but slowly - most of the roster you meet on day
+       one is still here months later, levelling alongside you. */
     var quits = 0;
     for (var i = 0; i < S.npcs.length; i++) {
       var n = S.npcs[i];
       if (n.dead) continue;
       var idleDays = (now - n.lastOnline) / DAY;
-      var q = 0.0016 + (1 - n.p.activity) * 0.010 + (1 - n.p.patience) * 0.005;
-      if (idleDays > 6) q += 0.05;
-      if (idleDays > 20) q += 0.22;
-      if (n.level < 6) q += 0.012;
+      var q = 0.0004 + (1 - n.p.activity) * 0.0022 + (1 - n.p.patience) * 0.0012;
+      if (idleDays > 14) q += 0.012;
+      if (idleDays > 45) q += 0.06;
       if (chance(q)) {
         n.dead = true; n.online = false; quits++;
         GAME.feed.newsFrom('logout', 'presence', { who: n.name, city: n.city });
       }
     }
 
-    /* replacements sign up at the bottom */
-    var joins = quits + (chance(0.5) ? rint(0, 2) : 0);
+    /* one in, one out: the city is always CFG.NPC_COUNT strong */
+    var living = 0;
+    for (var lv = 0; lv < S.npcs.length; lv++) if (!S.npcs[lv].dead) living++;
+    var joins = Math.max(0, CFG.NPC_COUNT - living);
     var used = {};
     for (var u = 0; u < S.npcs.length; u++) used[S.npcs[u].name.toLowerCase()] = 1;
     used[S.player.name.toLowerCase()] = 1;
     for (var j = 0; j < joins; j++) {
-      var fresh = GAME.state.makeNPC(S.nextNpcId++, used, now);
-      /* brand new accounts really are brand new */
+      var fresh = GAME.state.makeNPC(S.nextNpcId++, used, now, true);
       fresh.joined = now;
-      fresh.level = rint(1, 3);
-      fresh.xp = rint(0, 400);
-      fresh.str = rint(9, 18); fresh.def = rint(9, 18); fresh.spd = rint(9, 18); fresh.dex = rint(9, 18);
-      fresh.money = rint(200, 3000); fresh.bank = 0;
-      fresh.healthMax = 100 + (fresh.level - 1) * 12; fresh.health = fresh.healthMax;
-      fresh.wpn = null; fresh.arm = null; fresh.gear = 0;
       fresh.rung = 0;                     // nobody starts on the Attack Ladder
       fresh.w = 0; fresh.l = 0; fresh.crimes = rint(0, 12); fresh.posts = 0;
       fresh.fam = null;
@@ -13179,12 +14601,12 @@ GAME.sim = (function () {
       GAME.feed.news('presence', '{who} signed up. Somebody get the kid a drink.', { who: fresh.name });
     }
 
-    /* An account that stopped logging in months ago eventually gets purged.
-       If it was holding a rung, the strongest name outside the twenty moves
-       up into the empty slot - the ladder is never short. */
+    /* An account that stopped logging in eventually gets purged. If it was
+       holding a rung, the strongest name outside the twenty moves up into
+       the empty slot - the ladder is never short. */
     for (var d = S.npcs.length - 1; d >= 0; d--) {
       var e = S.npcs[d];
-      if (!e.dead || (now - e.lastOnline) < 45 * DAY) continue;
+      if (!e.dead || (now - e.lastOnline) < 21 * DAY) continue;
       var li = S.ladder.indexOf(e.id);
       if (li >= 0) S.ladder.splice(li, 1);
       S.npcs.splice(d, 1);
@@ -13318,11 +14740,13 @@ GAME.sim = (function () {
 
     GAME.mail.tick(now);
     GAME.forumSim.tick(now);
-    /* 18% of game-hours a challenge fires somewhere on the ladder */
-    if (chance(0.18 / 3600)) GAME.ladder.npcChallengeTick(1);
+    /* the ladder fights over itself in real time too */
+    GAME.ladder.npcChallengeTick(CFG.UI_TICK / HOUR);
     if (chance(0.12)) GAME.market.tick(now);
     if (chance(0.05)) GAME.points.tickMarket(now);
     if (chance(0.10)) GAME.auction.tick(now);
+    if (chance(0.02)) GAME.contracts.tick(now);
+    GAME.oc.npcTick(CFG.UI_TICK / HOUR);
     flavor(now);
     churn(now);
 
@@ -13406,10 +14830,12 @@ GAME.sim = (function () {
         if (who) GAME.npc.act(who, t);
       }
 
-      if (chance(0.18 * stepMin / 60)) GAME.ladder.npcChallengeTick(1);
+      GAME.ladder.npcChallengeTick(stepMin / 60);
       if (chance(0.4)) GAME.market.tick(t);
       if (chance(0.2)) GAME.points.tickMarket(t);
       if (chance(0.5)) GAME.auction.tick(t);
+      if (chance(0.4)) GAME.contracts.tick(t);
+      GAME.oc.npcTick(stepMin / 60);
       if (chance(0.5)) GAME.forumSim.tick(t);
       GAME.mail.tick(t);
       if (chance(0.35)) flavor(t);
@@ -13483,7 +14909,7 @@ GAME.sim = (function () {
       var n = on[Math.floor(rnd() * on.length)];
       if (chance(0.55)) GAME.npc.act(n, t);
       else GAME.npc.chatEvent(n, null, t);
-      if (chance(0.02)) GAME.ladder.npcChallengeTick(1);
+      GAME.ladder.npcChallengeTick(0.05);
       if (chance(0.08)) flavor(t);
     }
     realClock();
@@ -13536,6 +14962,8 @@ var NAV = [
 
   { grp: 'Violence' },
   { r: 'ladder', t: 'Attack Ladder', hot: true },
+  { r: 'oc', t: 'Organised Crime' },
+  { r: 'board', t: 'Notice Board' },
   { r: 'players', t: 'Players' },
   { r: 'hitlist', t: 'Hitlist' },
   { r: 'bodyguard', t: 'Bodyguard' },
@@ -13689,6 +15117,10 @@ GAME.ui = (function () {
       if (n.r === 'jail' && GAME.player.inJail()) badge = '<span class="badge">!</span>';
       if (n.r === 'hospital' && GAME.player.inHospital()) badge = '<span class="badge">!</span>';
       if (n.r === 'round' && GAME.season.over() && !S.rumbleDone) badge = '<span class="badge gold">!</span>';
+      if (n.r === 'board') {
+        var ready = GAME.contracts.active().filter(function (c) { return GAME.contracts.isDone(c); }).length;
+        if (ready) badge = '<span class="badge green">' + ready + '</span>';
+      }
       if (n.r === 'school') {
         var sc = GAME.school.current();
         if (sc && sc.done) badge = '<span class="badge green">&#10003;</span>';
@@ -14024,6 +15456,7 @@ PAGES.city = function () {
   h += '</div></div>';
 
   h += firstSteps();
+  h += thePack();
   h += '<div class="box"><h3>Where To</h3><div class="bd">' + quickGrid() + '</div></div>';
 
   h += '<div class="box"><h3>Your Numbers</h3><div class="bd"><div class="pgrid">' +
@@ -14046,6 +15479,44 @@ PAGES.city = function () {
 };
 
 function row(k, v) { return '<div class="prow"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+
+/* Everybody in this city started on the same day at level one, you
+   included. This is where you are in that crowd. */
+function thePack() {
+  var p = S.player;
+  var alive = [];
+  for (var i = 0; i < S.npcs.length; i++) if (!S.npcs[i].dead) alive.push(S.npcs[i]);
+  if (!alive.length) return '';
+  var field = alive.concat([p]).sort(function (a, b) { return (b.xp || 0) - (a.xp || 0); });
+  var place = field.indexOf(p) + 1;
+  var pct = Math.round((1 - (place - 1) / field.length) * 100);
+
+  /* the two people either side of you, which is who you actually race */
+  var idx = place - 1;
+  var near = [];
+  for (var k = Math.max(0, idx - 2); k <= Math.min(field.length - 1, idx + 2); k++) near.push({ e: field[k], place: k + 1 });
+
+  var lvls = alive.map(function (n) { return n.level; }).sort(function (a, b) { return a - b; });
+  var med = lvls[Math.floor(lvls.length / 2)];
+  var top = lvls[lvls.length - 1];
+  var days = Math.max(1, Math.round((NOW() - (S.seasonStart || S.createdAt)) / DAY));
+
+  var h = '<div class="box"><h3>The Pack<span class="sub">day ' + days + ' of the round</span></h3><div class="bd">' +
+    '<p class="dim">Everybody here signed up the same day you did, at level one, and has been playing ever since. ' +
+    'You are <b class="warn">' + ordinal(place) + '</b> of ' + field.length + ' &mdash; ahead of ' + pct + '% of the city. ' +
+    'The middle of the pack is level <b>' + med + '</b>; the front of it is level <b>' + top + '</b>.</p>' +
+    '<table class="t"><tr><th class="c">#</th><th>Player</th><th class="c">Lvl</th><th class="r">Experience</th><th class="c">Rung</th></tr>';
+  for (var j = 0; j < near.length; j++) {
+    var e = near[j].e, me = e.id === 0;
+    h += '<tr' + (me ? ' style="background:#241a12"' : '') + '><td class="c dim">' + near[j].place + '</td>' +
+      '<td>' + (me ? '<b class="warn">' + esc(e.name) + ' (you)</b>' : GAME.ui.userLink(e)) + '</td>' +
+      '<td class="c">' + e.level + '</td>' +
+      '<td class="r">' + fmtShort(e.xp || 0) + '</td>' +
+      '<td class="c dim">' + (GAME.ladder.rungOf(e.id) || '&mdash;') + '</td></tr>';
+  }
+  h += '</table></div></div>';
+  return h;
+}
 
 /* The first hour is the one that loses people. Two hundred accounts got
    here first and every one of them can flatten a man with no weapon, so
@@ -14082,6 +15553,8 @@ function quickGrid() {
     ['ladder', 'Attack Ladder', 'Twenty rungs. Ten points an hour.'],
     ['players', 'Find someone to hit', 'Browse who is online'],
     ['gym', 'Train', 'Energy buys the set, Will multiplies it'],
+    ['board', 'Take a job off the board', 'Work the others want doing'],
+    ['oc', 'Put a crew together', 'Family jobs, one player to a role'],
     ['jobs', 'Work a shift', 'Spend Energy for safe money'],
     ['streets', 'Go for a walk', 'Spend Energy, see what turns up']
   ];
@@ -15418,6 +16891,17 @@ PAGES.help = function () {
   '</table>' +
   '<p class="dim">Anybody who hits you opens a six hour revenge window. Nobody may touch an account under level 5 or less than two days old. A bodyguard is 25 points and covers two hours, in which nobody can attack you and you cannot attack anybody.</p>' +
   '<div class="hr"></div>' +
+  '<p><b>Organised Crime.</b> Some jobs cannot be done alone. If you are in a family you can put a crew together out of it, ' +
+  'one player to a role, and every one of them rolls against their own stats on the night. A driver with no Agility loses you ' +
+  'the van. One slip can be covered; two and everybody walks home or gets pinched. Sitting a crew down costs 4 Brave, the pot ' +
+  'is split round the crew, and each job cools off for hours afterwards. The other families run their own jobs whether you are ' +
+  'looking or not, and you read about it in the paper.</p>' +
+  '<div class="hr"></div>' +
+  '<p><b>The Notice Board.</b> Work the other two hundred want doing and will not do themselves &mdash; a name put in a hospital ' +
+  'bed, somebody bailed out, a piece fetched that they cannot be seen buying, or just proof you can put a shift in. ' +
+  'You can carry three jobs at a time. Finish one and the person who posted it pays you in cash and points and thinks better ' +
+  'of you for good. Sit on it for a day and they take it back, tell the shoutbox, and remember.</p>' +
+  '<div class="hr"></div>' +
   '<p><b>Money.</b> Cash on you can be mugged. Cash in the bank cannot. Crimes pay best and can put you inside; shifts are slow and safe; ' +
   'the Truck Stop is Dexterity turned into goods and the fence downtown will not open the shutter for under twenty-five units. ' +
   'The Item Market, the Auction and the Point Market are all run by the other two hundred people here.</p>' +
@@ -15425,10 +16909,13 @@ PAGES.help = function () {
   '<p><b>The round.</b> exMafia runs in eight week rounds. When one ends, everybody on the ladder goes into <b>The Rumble</b> &mdash; ' +
   'one room, last one standing &mdash; and then the whole city resets to level one. Your name on the wall and your lifetime counters are all that carry over.</p>' +
   '<div class="hr"></div>' +
-  '<p><b>The other two hundred.</b> Every other name here is an account with its own time zone, its own hours, its own temper and its own idea ' +
-  'of how to play. They do crimes, train, fight over the ladder, argue in the shoutbox, join and leave families, hold grudges for weeks, and ' +
-  'eventually stop logging in for good while new people sign up underneath them. None of that waits for you. Come back after a week away and ' +
-  'the city will have moved without you.</p>' +
+  '<p><b>The other two hundred.</b> Every one of them signed up the same day you did, at level one, with ten in every stat and nothing in ' +
+  'their pockets. They have been playing ever since &mdash; their own time zone, their own hours, their own temper and their own idea of how ' +
+  'to play. They do crimes, train, fight over the ladder, argue in the shoutbox, join and leave families, post work on the notice board, hold ' +
+  'grudges for weeks, and a few of them eventually stop logging in for good while somebody new signs up underneath them. None of it waits ' +
+  'for you. Come back after a week away and the pack will have moved without you. <b>The Pack</b> panel on the City page shows exactly where ' +
+  'you sit in it.</p>' +
+  '<p class="dim">There is no level cap, for you or for them.</p>' +
   '<div class="hr"></div>' +
   '<p class="dim">Your game saves to this browser by itself. Settings has an export button if you want a copy of it.</p>' +
   '</div></div>';
@@ -15600,6 +17087,161 @@ PAGES.round = function () {
       '<div class="prow"><span class="k">Lifetime crimes</span><span class="v">' + fmt(lt.totalCrimes || 0) + '</span></div>' +
       '</div></div></div>';
   }
+  return h;
+};
+
+
+/* ===== 66-pages-new.js ===== */
+/* ============================================================
+   66-pages-new.js :: Organised Crime and the Notice Board
+   ============================================================ */
+
+PAGES.oc = function () {
+  var p = S.player, f = GAME.family.mine();
+  var sel = S.ocJob;
+  var job = sel ? GAME.oc.get(sel) : null;
+
+  var h = '<div class="box"><h3>Organised Crime<span class="sub">' + (f ? esc(f.name) : 'no family') + '</span></h3><div class="bd">' +
+    '<p>Some jobs cannot be done alone. You put a crew together out of your own family, one player to a role, ' +
+    'and every one of them rolls against their own stats when the night comes.</p>' +
+    '<p class="dim">Bring a driver who cannot drive and it comes apart on the ramp. One slip can be covered. Two and everybody walks home, ' +
+    'or does not. Sitting a crew down costs <b>4 Brave</b>.</p>';
+  if (!f) {
+    h += '<p class="bad">You are not in a family. Join one or start one and then come back.</p>' +
+      '<a class="btn" href="#/family" data-nav="family">Families</a>';
+    return h + '</div></div>';
+  }
+  h += '<p class="dim">Your family has <b>' + GAME.oc.bench().length + '</b> people available tonight.</p></div>';
+
+  if (S.lastOc) {
+    var R = S.lastOc;
+    h += '<div class="bd"><div class="hr"></div>' +
+      '<p class="' + (R.success ? 'good big' : 'bad big') + '">' + esc(R.success ? R.job.ok : (R.blown > 1 ? R.job.caught : R.job.fail)) + '</p>';
+    h += '<table class="t"><tr><th>Role</th><th>Who</th><th class="c">Odds</th><th class="c">Held up</th></tr>';
+    for (var i = 0; i < R.results.length; i++) {
+      var x = R.results[i];
+      h += '<tr><td>' + esc(x.role.name) + '</td><td>' + (x.member ? esc(x.member.name) : '&mdash;') + '</td>' +
+        '<td class="c dim">' + Math.round(x.chance * 100) + '%</td>' +
+        '<td class="c">' + (x.ok ? '<span class="good">yes</span>' : '<span class="bad">no</span>') + '</td></tr>';
+    }
+    h += '</table>';
+    if (R.success) h += '<p class="good">Pot ' + money(R.pot) + '. Your cut: <b>' + money(R.cut) + '</b>, plus ' + R.xp + ' experience. The rest went round the crew.</p>';
+    else if (R.jailed) h += '<p class="bad">You are in the cells for ' + Math.round(R.jailSecs / 60) + ' minutes.</p>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  if (job) {
+    var r = GAME.oc.readiness(job);
+    var err = GAME.oc.canRun(job);
+    h += '<div class="box"><h3>' + esc(job.name) + '<span class="sub">level ' + job.lvl + ' &middot; ' + job.roles.length + ' on the crew</span></h3><div class="bd">' +
+      '<p>' + esc(job.brief || '') + '</p>' +
+      '<p class="dim">Pot ' + money(job.cut[0]) + ' &ndash; ' + money(job.cut[1]) +
+      ' &middot; cools off for ' + job.cooldownH + ' hours &middot; ' + Math.round(job.jailS[0] / 60) + '&ndash;' + Math.round(job.jailS[1] / 60) + ' minutes inside if it goes wrong</p>' +
+      '<div class="admrow"><button class="btn sm" data-act="ocauto">Pick the best crew for me</button> ' +
+      '<button class="btn sm" data-act="occlear">Empty the crew</button> ' +
+      '<button class="btn sm" data-act="ocback">Other jobs</button></div>' +
+      '</div>';
+    h += '<div class="scroll"><table class="t"><tr><th>Role</th><th>Wants</th><th>Who is on it</th><th class="c">They hold up</th></tr>';
+    var benchList = GAME.oc.bench();
+    for (var k = 0; k < r.rows.length; k++) {
+      var slot = r.rows[k], role = slot.role;
+      var opts = '<option value="">&mdash; nobody &mdash;</option>';
+      benchList.sort(function (a, b) { return (b[role.stat] || 0) - (a[role.stat] || 0); });
+      for (var m = 0; m < benchList.length; m++) {
+        var mem = benchList[m];
+        opts += '<option value="' + mem.id + '"' + (slot.member && slot.member.id === mem.id ? ' selected' : '') + '>' +
+          esc(mem.name) + ' — ' + (GAME.oc.STATLABEL[role.stat] || role.stat) + ' ' + fmt(Math.round(mem[role.stat] || 0)) + '</option>';
+      }
+      h += '<tr><td><b>' + esc(role.name) + '</b><div class="dimmer" style="font-size:9.5px">' + esc(role.desc || '') + '</div></td>' +
+        '<td class="dim">' + (GAME.oc.STATLABEL[role.stat] || role.stat) + ' ' + fmt(role.need) + '</td>' +
+        '<td><select data-act="ocpick" data-id="' + role.id + '" style="max-width:230px">' + opts + '</select></td>' +
+        '<td class="c ' + (slot.chance > 0.8 ? 'good' : slot.chance > 0.5 ? 'warn' : 'bad') + '">' +
+        (slot.member ? Math.round(slot.chance * 100) + '%' : '&mdash;') + '</td></tr>';
+    }
+    h += '</table></div><div class="bd">' +
+      '<p>Chance the job comes off: <b class="' + (r.chance > 0.7 ? 'good' : r.chance > 0.4 ? 'warn' : 'bad') + '">' + Math.round(r.chance * 100) + '%</b></p>' +
+      (err ? '<p class="bad">' + esc(err) + '</p>' : '') +
+      '<button class="btn red big ' + (err ? 'off' : '') + '" data-act="ocrun" data-id="' + job.id + '">Do it tonight</button>' +
+      '</div></div>';
+    return h;
+  }
+
+  h += '<div class="box"><h3>The Jobs</h3><div class="scroll"><table class="t">' +
+    '<tr><th>Job</th><th class="c">Lvl</th><th class="c">Crew</th><th class="r">Pot</th><th class="c">Cools</th><th></th></tr>';
+  var l = GAME.oc.list();
+  for (var j = 0; j < l.length; j++) {
+    var job2 = l[j];
+    var cd = GAME.oc.cooldownLeft(f.id, job2.id);
+    var locked = p.level < job2.lvl;
+    h += '<tr' + (locked ? ' style="opacity:.45"' : '') + '><td><b>' + esc(job2.name) + '</b>' +
+      '<div class="dimmer" style="font-size:9.5px">' + esc(job2.brief || '') + '</div></td>' +
+      '<td class="c">' + job2.lvl + '</td><td class="c">' + job2.roles.length + '</td>' +
+      '<td class="r">' + money(job2.cut[0]) + '&ndash;' + money(job2.cut[1]) + '</td>' +
+      '<td class="c dim">' + (cd > 0 ? clock(cd) : job2.cooldownH + 'h') + '</td>' +
+      '<td class="r"><button class="btn sm ' + (locked ? 'off' : '') + '" data-act="ocopen" data-id="' + job2.id + '">Set it up</button></td></tr>';
+  }
+  h += '</table></div></div>';
+
+  h += '<div class="box"><h3>Your Record</h3><div class="bd"><div class="pgrid">' +
+    row('Jobs that came off', fmt(p.st.ocDone || 0)) + row('Jobs that did not', fmt(p.st.ocFail || 0)) +
+    '</div></div></div>';
+  return h;
+};
+
+
+PAGES.board = function () {
+  var p = S.player;
+  var mine = GAME.contracts.active();
+  var b = GAME.contracts.board();
+
+  var h = '<div class="box"><h3>The Notice Board<span class="sub">' + b.length + ' up, ' + mine.length + '/' + GAME.contracts.MAX_ACTIVE + ' taken</span></h3><div class="bd">' +
+    '<p>Work the other two hundred want doing and will not do themselves. Take a job and the person who posted it is watching. ' +
+    'Finish it and they remember. Sit on it for a day and they remember that instead.</p></div>';
+
+  if (mine.length) {
+    h += '<div class="bd"><div class="hr"></div><b>What you are carrying</b></div>';
+    h += '<div class="scroll"><table class="t"><tr><th>For</th><th>Job</th><th class="c">How it is going</th><th class="r">Pays</th><th></th></tr>';
+    for (var i = 0; i < mine.length; i++) {
+      var c = mine[i];
+      var pr = GAME.contracts.progress(c);
+      var done = GAME.contracts.isDone(c) && !c.failed;
+      var bar = pr.time
+        ? clock(Math.max(0, c.until - NOW())) + ' left'
+        : fmt(Math.min(pr.have, pr.need)) + ' / ' + fmt(pr.need);
+      h += '<tr><td>' + esc(c.byName) + '</td>' +
+        '<td>' + esc(GAME.contracts.describe(c)) + '</td>' +
+        '<td class="c ' + (c.failed ? 'bad' : done ? 'good' : '') + '">' + (c.failed ? 'blown' : bar) + '</td>' +
+        '<td class="r">' + money(c.reward) + '<div class="dimmer" style="font-size:9.5px">+' + c.points + ' pts</div></td>' +
+        '<td class="r nowrap">' +
+        '<button class="btn sm green ' + (done ? '' : 'off') + '" data-act="conclaim" data-id="' + c.id + '">Collect</button> ' +
+        '<button class="btn sm" data-act="condrop" data-id="' + c.id + '">Drop</button></td></tr>';
+    }
+    h += '</table></div>';
+  }
+
+  h += '<div class="bd"><div class="hr"></div><b>Posted</b></div>';
+  h += '<div class="bd tight">';
+  if (!b.length) h += '<div class="bd dim">Board is empty. Somebody will want something soon enough.</div>';
+  for (var k = 0; k < b.length; k++) {
+    var c2 = b[k];
+    var poster = byId(c2.by);
+    h += '<div class="post"><div class="ph">' +
+      '<span>' + (poster ? '<a href="#" data-who="' + poster.id + '">' + esc(c2.byName) + '</a> <span class="dimmer">lvl ' + poster.level + '</span>' : esc(c2.byName)) + '</span>' +
+      '<span class="dim">' + ago(NOW() - c2.posted) + ' &middot; gone in ' + clock(c2.expires - NOW()) + '</span></div>' +
+      '<div class="pb"><b>' + esc(c2.title) + '</b>\n' + esc(c2.body) +
+      '<div class="hr"></div>' +
+      '<span class="dim">' + esc(GAME.contracts.describe(c2)) + '</span> &nbsp; ' +
+      '<b class="warn">' + money(c2.reward) + '</b> <span class="dim">+ ' + c2.points + ' points</span> ' +
+      '<button class="btn sm red" data-act="conaccept" data-id="' + c2.id + '" style="float:right">Take it</button>' +
+      '</div></div>';
+  }
+  h += '</div>';
+
+  h += '<div class="bd"><div class="hr"></div><div class="pgrid">' +
+    row('Jobs finished', fmt(p.st.contracts || 0)) +
+    row('Board pays out', money(Math.round(1200 * Math.pow(p.level, 1.9)))) +
+    '</div></div></div>';
   return h;
 };
 
@@ -15831,6 +17473,37 @@ GAME.actions = (function () {
     var r = GAME.auction.bid(Number(id));
     if (!ok(r)) return;
     GAME.ui.toast('Bid ' + money(r.amount) + '.', 'good');
+    GAME.ui.render();
+  };
+
+  /* ---- organised crime ---- */
+  H.ocopen = function (id) { S.ocJob = id; GAME.oc.clearCrew(); GAME.oc.autoFill(GAME.oc.get(id) || { roles: [] }); GAME.ui.render(); };
+  H.ocback = function () { S.ocJob = null; S.lastOc = null; GAME.ui.render(); };
+  H.ocauto = function () { var j = GAME.oc.get(S.ocJob); if (j) GAME.oc.autoFill(j); GAME.ui.render(); };
+  H.occlear = function () { GAME.oc.clearCrew(); GAME.ui.render(); };
+  H.ocrun = function (id) {
+    var r = GAME.oc.run(id);
+    if (r.err) return GAME.ui.toast(r.err, 'bad');
+    S.lastOc = r;
+    GAME.ui.toast(r.success ? 'It came off. Your cut: ' + money(r.cut) : 'It fell apart.', r.success ? 'good' : 'bad');
+    GAME.ui.render();
+  };
+
+  /* ---- the notice board ---- */
+  H.conaccept = function (id) {
+    var r = GAME.contracts.accept(Number(id));
+    if (!ok(r, 'Taken.')) return;
+    GAME.ui.render();
+  };
+  H.conclaim = function (id) {
+    var r = GAME.contracts.claim(Number(id));
+    if (!ok(r)) return;
+    GAME.ui.toast('Paid: ' + money(r.c.reward) + ' and ' + r.c.points + ' points.', 'good');
+    GAME.ui.render();
+  };
+  H.condrop = function (id) {
+    var r = GAME.contracts.drop(Number(id));
+    if (!ok(r, 'Dropped. They noticed.')) return;
     GAME.ui.render();
   };
 
@@ -16101,6 +17774,23 @@ GAME.actions = (function () {
     GAME.boot.start({ name: name, city: city.name, hood: city.hood, gender: g });
   };
 
+  /* ---- the knock ------------------------------------------------
+     Six clicks on CITY, quickly, and the back office opens. Nothing
+     advertises it and nothing else in the game uses the gesture.
+  ------------------------------------------------------------------ */
+  var knocks = [];
+  function cityKnock() {
+    var now = Date.now();
+    knocks = knocks.filter(function (t) { return now - t < 2500; });
+    knocks.push(now);
+    if (knocks.length >= 6) {
+      knocks = [];
+      GAME.admin.show();
+      return true;
+    }
+    return false;
+  }
+
   /* ---- dispatch ---- */
   function onClick(e) {
     var t = e.target;
@@ -16117,7 +17807,12 @@ GAME.actions = (function () {
       el2 = el2.parentNode;
     }
     if (navFam) { e.preventDefault(); GAME.ui.go('family', { id: navFam }); return; }
-    if (nav) { e.preventDefault(); GAME.ui.go(nav); return; }
+    if (nav) {
+      e.preventDefault();
+      if (nav === 'city' && cityKnock()) return;
+      GAME.ui.go(nav);
+      return;
+    }
     if (who !== null && who !== undefined && !act) {
       e.preventDefault();
       GAME.ui.go('profile', { id: who });
@@ -16137,6 +17832,15 @@ GAME.actions = (function () {
     GAME.save.markDirty();
   }
 
+  function onChange(e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-act') === 'ocpick') {
+      GAME.oc.assign(t.getAttribute('data-id'), t.value === '' ? null : Number(t.value));
+      GAME.ui.render();
+    }
+  }
+
   function onKey(e) {
     if (e.key === 'Enter') {
       var id = e.target && e.target.id;
@@ -16150,11 +17854,868 @@ GAME.actions = (function () {
 
   function bind() {
     document.addEventListener('click', onClick, false);
+    document.addEventListener('change', onChange, false);
     document.addEventListener('keydown', onKey, false);
   }
 
   return { bind: bind, H: H };
 })();
+
+
+/* ===== 80-admin.js ===== */
+/* ============================================================
+   80-admin.js :: the back office
+   Click CITY six times quickly and this opens. Everything in the
+   game is reachable from here - the player, all two hundred
+   accounts, the ladder, the clock, the economy, every content
+   table and every tuning constant - either through a curated
+   panel or through the raw object browser, which can reach any
+   value the game holds.
+   ============================================================ */
+
+GAME.admin = (function () {
+
+  var open = false;
+  var tab = 'you';
+  var npcQuery = '';
+  var npcSel = null;
+  var browsePath = 'S';
+  var lastMsg = '';
+
+  var TABS = [
+    ['you', 'You'], ['npcs', 'Players'], ['ladder', 'Ladder'], ['world', 'World & Time'],
+    ['economy', 'Economy'], ['data', 'Content'], ['fams', 'Families'], ['feeds', 'Feeds'],
+    ['config', 'Tuning'], ['browse', 'Raw Data'], ['save', 'Save']
+  ];
+
+  function roots() { return { S: S, CFG: CFG, DATA: DATA }; }
+
+  /* ---- path access: "S.player.money", "DATA.crimes.3.pay.0" ---- */
+  function getPath(path) {
+    var parts = String(path).split('.');
+    var node = roots()[parts[0]];
+    for (var i = 1; i < parts.length && node !== undefined && node !== null; i++) node = node[parts[i]];
+    return node;
+  }
+  function setPath(path, raw) {
+    var parts = String(path).split('.');
+    var node = roots()[parts[0]];
+    for (var i = 1; i < parts.length - 1; i++) {
+      if (node === undefined || node === null) return 'No such path.';
+      node = node[parts[i]];
+    }
+    if (node === undefined || node === null) return 'No such path.';
+    var key = parts[parts.length - 1];
+    var cur = node[key];
+    var val = raw;
+    if (typeof cur === 'number') {
+      val = Number(raw);
+      if (isNaN(val)) return 'Not a number.';
+    } else if (typeof cur === 'boolean') {
+      val = (raw === 'true' || raw === true || raw === '1' || raw === 1);
+    } else if (cur !== null && typeof cur === 'object') {
+      try { val = JSON.parse(raw); } catch (e) { return 'Not valid JSON.'; }
+    }
+    node[key] = val;
+    return null;
+  }
+
+  function typeOf(v) {
+    if (v === null) return 'null';
+    if (Object.prototype.toString.call(v) === '[object Array]') return 'array';
+    return typeof v;
+  }
+
+  /* ---- shared field widgets ---- */
+  function field(path, label, opts) {
+    opts = opts || {};
+    var v = getPath(path);
+    var t = typeOf(v);
+    var id = 'adm_' + path.replace(/[^\w]/g, '_');
+    var input;
+    if (t === 'boolean') {
+      input = '<input type="checkbox" id="' + id + '" data-adm="tog" data-path="' + esc(path) + '"' + (v ? ' checked' : '') + '>';
+    } else if (t === 'object' || t === 'array') {
+      input = '<input type="text" id="' + id + '" value="' + esc(JSON.stringify(v)) + '" data-adm-live="' + esc(path) + '">';
+    } else {
+      input = '<input type="' + (t === 'number' ? 'number' : 'text') + '" step="any" id="' + id + '" value="' +
+        esc(v === undefined ? '' : v) + '" data-adm-live="' + esc(path) + '">';
+    }
+    return '<label class="admf"><span title="' + esc(path) + '">' + esc(label || path.split('.').pop()) +
+      (opts.hint ? ' <i>' + esc(opts.hint) + '</i>' : '') + '</span>' + input + '</label>';
+  }
+
+  function fields(prefix, keys, labels) {
+    var out = '';
+    for (var i = 0; i < keys.length; i++) {
+      if (getPath(prefix + '.' + keys[i]) === undefined) continue;
+      out += field(prefix + '.' + keys[i], (labels && labels[i]) || keys[i]);
+    }
+    return out;
+  }
+
+  function btn(act, label, cls, extra) {
+    return '<button class="btn sm ' + (cls || '') + '" data-adm="' + act + '"' + (extra || '') + '>' + label + '</button>';
+  }
+
+  function grid(inner) { return '<div class="admgrid">' + inner + '</div>'; }
+  function sect(title, inner) { return '<div class="admsect"><h4>' + title + '</h4>' + inner + '</div>'; }
+
+  /* ================= tabs ================= */
+
+  function tabYou() {
+    var p = S.player;
+    var h = sect('Identity', grid(
+      fields('S.player', ['name', 'real', 'city', 'hood', 'gender', 'sig', 'bio'])
+    ));
+    h += sect('Level and rank', grid(
+      fields('S.player', ['level', 'xp', 'respect', 'points'])
+    ) + '<div class="admrow">' +
+      btn('lvlup', '+1 level') + btn('lvl10', '+10 levels') + btn('lvl50', '+50 levels') +
+      btn('maxrank', 'Jump to the top rank', 'gold') + btn('resetlvl', 'Back to level 1', 'red') +
+      '</div><p class="dim">Rank follows experience. Setting the level directly does not move experience, so use the buttons if you want both to agree.</p>');
+
+    h += sect('Stats', grid(fields('S.player', ['str', 'def', 'spd', 'dex', 'iq'],
+      ['Strength', 'Guard', 'Agility', 'Labour', 'IQ'])) +
+      '<div class="admrow">' + btn('stats100', 'All stats +100') + btn('stats10k', 'All stats +10,000') +
+      btn('statsmatch', 'Match the strongest player in the city', 'gold') + '</div>');
+
+    h += sect('Gauges', grid(fields('S.player',
+      ['energy', 'energyMax', 'nerve', 'nerveMax', 'will', 'willMax', 'dexg', 'dexgMax', 'health', 'healthMax', 'attacks', 'attacksMax'])) +
+      '<div class="admrow">' + btn('fillall', 'Fill everything', 'green') + btn('emptyall', 'Empty everything') + '</div>');
+
+    h += sect('Money', grid(fields('S.player', ['money', 'bank'])) +
+      '<div class="admrow">' + btn('cash1m', '+$1m') + btn('cash1b', '+$1bn') + btn('cash1t', '+$1tn') +
+      btn('pts1k', '+1,000 points') + btn('broke', 'Take it all', 'red') + '</div>');
+
+    h += sect('Status', grid(fields('S.player', ['hospUntil', 'jailUntil', 'bail', 'bgUntil', 'travelUntil', 'ladderLock', 'retainerUntil'])) +
+      '<div class="admrow">' + btn('clearstatus', 'Clear hospital, jail, transit and locks', 'green') +
+      btn('hospme', 'Put me in hospital') + btn('jailme', 'Put me in jail') + '</div>');
+
+    h += sect('Records', grid(fields('S.player.st',
+      ['w', 'l', 'crimes', 'crimeFail', 'jailed', 'hosped', 'mugged', 'muggedBy', 'earned', 'spent', 'gymSets', 'busts', 'posts', 'walks', 'runs', 'killsOnLadder'])));
+    return h;
+  }
+
+  function tabNpcs() {
+    var q = npcQuery.toLowerCase();
+    var list = S.npcs.filter(function (n) { return !q || n.name.toLowerCase().indexOf(q) >= 0; });
+    list.sort(function (a, b) { return b.level - a.level; });
+
+    var h = sect('Find an account',
+      '<div class="admrow"><input type="text" id="adm-q" placeholder="screen name" value="' + esc(npcQuery) + '" style="width:200px"> ' +
+      btn('search', 'Search') + btn('clearq', 'Clear') +
+      ' <span class="dim">' + list.length + ' of ' + S.npcs.length + '</span></div>' +
+      '<div class="admrow">' + btn('addnpc', 'Create an account', 'green') +
+      btn('bulklvl', 'Give everybody +5 levels') +
+      btn('bulkreset', 'Send everybody back to level 1', 'red') +
+      btn('bulkheal', 'Empty the hospital and the cells') +
+      btn('bulkcash', 'Give everybody $1m') + '</div>');
+
+    if (npcSel !== null) {
+      var n = byId(npcSel);
+      if (n && n.id !== 0) {
+        var i = S.npcs.indexOf(n);
+        var pre = 'S.npcs.' + i;
+        h += sect('Editing ' + esc(n.name) + ' <span class="dim">(id ' + n.id + ', rung ' +
+          (GAME.ladder.rungOf(n.id) || '&mdash;') + ')</span>',
+          grid(fields(pre, ['name', 'real', 'city', 'age', 'gender', 'arch', 'level', 'xp', 'money', 'bank', 'points',
+            'str', 'def', 'spd', 'dex', 'iq', 'health', 'healthMax', 'energy', 'nerve', 'will', 'dexg', 'attacks',
+            'respect', 'w', 'l', 'crimes', 'posts', 'op', 'grudge', 'fear', 'bounty', 'fam', 'famRole',
+            'hospUntil', 'jailUntil', 'bgUntil', 'dead', 'pf', 'tz', 'peak', 'sessionLen', 'wpn', 'arm', 'sig', 'bio'])) +
+          '<h5>Temperament</h5>' +
+          grid(fields(pre + '.p', ['aggro', 'activity', 'chatty', 'vindictive', 'loyalty', 'greed', 'honesty', 'ego', 'humor', 'skill', 'patience', 'generosity'])) +
+          '<div class="admrow">' +
+          btn('npcHere', 'Bring them online') + btn('npcGone', 'Log them off') +
+          btn('npcLove', 'Make them like me') + btn('npcHate', 'Make them hate me') +
+          btn('npcLadder', 'Put them on the ladder', 'gold') +
+          btn('npcGear', 'Give them the best gear they can hold') +
+          btn('npcKill', 'Retire this account', 'red') +
+          btn('npcClose', 'Close') + '</div>');
+      }
+    }
+
+    h += '<div class="scroll"><table class="t"><tr><th>Name</th><th class="c">Lvl</th><th class="r">Power</th><th class="c">Rung</th><th class="c">Online</th><th class="c">Opinion</th><th></th></tr>';
+    for (var k = 0; k < Math.min(list.length, 120); k++) {
+      var e = list[k];
+      h += '<tr><td>' + esc(e.name) + (e.dead ? ' <span class="tag off">retired</span>' : '') + '</td>' +
+        '<td class="c">' + e.level + '</td><td class="r">' + fmt(GAME.combat.power(e)) + '</td>' +
+        '<td class="c">' + (GAME.ladder.rungOf(e.id) || '&mdash;') + '</td>' +
+        '<td class="c">' + (e.online ? '<span class="good">yes</span>' : '<span class="dim">no</span>') + '</td>' +
+        '<td class="c ' + (e.op < -20 ? 'bad' : e.op > 20 ? 'good' : 'dim') + '">' + Math.round(e.op) + '</td>' +
+        '<td class="r">' + btn('pick', 'Edit', '', ' data-id="' + e.id + '"') + '</td></tr>';
+    }
+    h += '</table></div>';
+    return h;
+  }
+
+  function tabLadder() {
+    var rows = GAME.ladder.rows();
+    var h = sect('The Attack Ladder',
+      '<div class="admrow">' +
+      btn('ladme1', 'Put me on rung 1', 'gold') + btn('ladme20', 'Put me on rung 20') +
+      btn('ladoff', 'Take me off the ladder') + btn('ladseed', 'Reseed from raw power') +
+      btn('ladshuffle', 'Shuffle it') + btn('ladchal', 'Run 50 game-hours of challenges') +
+      '</div><p class="dim">Rung one is the Godfather. Dragging is not a thing here &mdash; use the arrows.</p>');
+    h += '<div class="scroll"><table class="t"><tr><th class="c">Rung</th><th>Holder</th><th class="c">Lvl</th><th class="r">Power</th><th class="c">Held</th><th></th></tr>';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      h += '<tr><td class="c"><b>' + r.rung + '</b></td>' +
+        '<td>' + (r.isMe ? '<b class="warn">' + esc(r.e.name) + ' (you)</b>' : esc(r.e.name)) + '</td>' +
+        '<td class="c">' + r.e.level + '</td><td class="r">' + fmt(GAME.combat.power(r.e)) + '</td>' +
+        '<td class="c dim">' + r.held + 'd</td>' +
+        '<td class="r nowrap">' + btn('ladup', '&uarr;', '', ' data-n="' + r.rung + '"') + ' ' +
+        btn('laddown', '&darr;', '', ' data-n="' + r.rung + '"') + ' ' +
+        btn('ladkick', 'Off', 'red', ' data-n="' + r.rung + '"') + '</td></tr>';
+    }
+    h += '</table></div>';
+    return h;
+  }
+
+  function tabWorld() {
+    var h = sect('Skip forward',
+      '<p class="dim">Runs the whole city forward: everybody plays, the ladder fights, the market moves, ' +
+      'people quit and sign up. Exactly what happens while the tab is closed.</p><div class="admrow">' +
+      btn('fw1h', '1 hour') + btn('fw6h', '6 hours') + btn('fw1d', '1 day') + btn('fw3d', '3 days') +
+      btn('fw7d', '1 week') + btn('fw30d', '1 month', 'gold') + btn('fw90d', '3 months', 'gold') +
+      '</div><div class="admrow"><input type="number" id="adm-fw" value="24" style="width:80px"> ' +
+      btn('fwn', 'hours &mdash; go', 'green') + '</div>');
+
+    h += sect('The round', grid(fields('S', ['roundNo', 'seasonStart', 'rumbleDone'])) +
+      '<div class="admrow">' + btn('endround', 'End the round now') + btn('rumble', 'Fight The Rumble', 'red') +
+      btn('nextround', 'Start the next round', 'gold') + '</div>' +
+      '<p class="dim">Round ' + GAME.season.number() + ', week ' + GAME.season.week() + ', ' +
+      (GAME.season.over() ? 'over' : clock(GAME.season.left()) + ' left') + '.</p>');
+
+    h += sect('Who is about',
+      '<p class="dim">' + GAME.sim.onlineCount() + ' online of ' + S.npcs.filter(function (n) { return !n.dead; }).length + ' living accounts.</p>' +
+      '<div class="admrow">' + btn('allon', 'Bring everybody online') + btn('alloff', 'Send everybody home') +
+      btn('presence', 'Roll presence again') + '</div>');
+
+    h += sect('Make something happen', '<div class="admrow">' +
+      btn('evAttackMe', 'Have somebody jump me') +
+      btn('evMailMe', 'Send me some mail') +
+      btn('evBounty', 'Put a bounty on my head') +
+      btn('evChat', 'Get the shoutbox going') +
+      btn('evWar', 'Start a family war') +
+      btn('evNews', 'Fill the newspaper') + '</div>');
+
+    h += sect('The simulation', grid(fields('CFG', ['UI_TICK', 'SIM_STEP', 'OFFLINE_MAX', 'OFFLINE_STEP_MS', 'NPC_COUNT', 'pace'])) +
+      '<div class="admrow">' + btn('simstop', 'Pause the world') + btn('simstart', 'Start it again', 'green') + '</div>');
+    return h;
+  }
+
+  function tabEconomy() {
+    var h = sect('Markets', '<p class="dim">' + GAME.market.listings().length + ' item lots, ' +
+      GAME.auction.lots().length + ' auction lots, ' + GAME.points.market().length + ' point listings.</p>' +
+      '<div class="admrow">' + btn('reseedmkt', 'Restock the item market') + btn('reseedauc', 'Restock the auction') +
+      btn('reseedpts', 'Restock the point market') + btn('clearmkt', 'Clear every market', 'red') + '</div>');
+    h += sect('Give yourself', '<div class="admrow">' +
+      btn('allitems', 'One of every item', 'gold') + btn('allprops', 'Every property', 'gold') +
+      btn('allgyms', 'Every gym membership') + btn('bestgear', 'The best weapon and armour in the game') + '</div>');
+    h += sect('Tuning', grid(fields('CFG', ['BANK_RATE', 'MUG_FRACTION', 'DROP_CHANCE', 'START_MONEY', 'HOSP_MIN', 'HOSP_MAX', 'JAIL_MIN', 'JAIL_MAX'])));
+    h += sect('The hitlist', '<p class="dim">' + (S.hitlist || []).length + ' open bounties.</p>' +
+      '<div class="admrow">' + btn('clearhits', 'Clear the hitlist') + '</div>');
+    return h;
+  }
+
+  function tabData() {
+    var sets = [
+      ['crimes', 'Crimes', ['id', 'name', 'tier', 'lvl', 'brave', 'base', 'pay', 'xp', 'jail', 'jailP']],
+      ['jobs', 'Jobs', ['id', 'name', 'lvl', 'energy', 'lab', 'pay', 'xp']],
+      ['items', 'Items', ['id', 'name', 'cat', 'lvl', 'price', 'atk', 'def', 'acc', 'heal', 'stock']],
+      ['props', 'Property', ['id', 'name', 'kind', 'lvl', 'price', 'upkeep', 'income', 'hp', 'energyRegen']],
+      ['gym', 'Gyms', ['id', 'name', 'lvl', 'price', 'str', 'def', 'spd', 'dex']],
+      ['cities', 'Cities', ['id', 'name', 'cost', 'flightMin']],
+      ['ranks', 'Ranks', ['name', 'lvl', 'xp']],
+      ['oc', 'Organised Crime', ['id', 'name', 'lvl', 'minCrew', 'cut', 'xp', 'cooldownH']]
+    ];
+    var which = S._admData || 'crimes';
+    var h = '<div class="admrow">';
+    for (var i = 0; i < sets.length; i++) {
+      h += btn('dset', sets[i][1] + ' <span class="dim">(' + ((DATA[sets[i][0]] || []).length) + ')</span>',
+        which === sets[i][0] ? 'gold' : '', ' data-id="' + sets[i][0] + '"');
+    }
+    h += '</div>';
+    var def = null;
+    for (var k = 0; k < sets.length; k++) if (sets[k][0] === which) def = sets[k];
+    if (!def) return h + '<p class="dim">Nothing selected.</p>';
+    var arr = DATA[which] || [];
+    h += '<p class="dim">Editing <b>DATA.' + which + '</b>. Changes take effect immediately and are saved with your game.</p>';
+    h += '<div class="scroll" style="max-height:52vh"><table class="t admtable"><tr><th class="c">#</th>';
+    for (var c = 0; c < def[2].length; c++) h += '<th>' + def[2][c] + '</th>';
+    h += '</tr>';
+    for (var r = 0; r < Math.min(arr.length, 300); r++) {
+      h += '<tr><td class="c dim">' + r + '</td>';
+      for (var f = 0; f < def[2].length; f++) {
+        var path = 'DATA.' + which + '.' + r + '.' + def[2][f];
+        var v = getPath(path);
+        if (v === undefined) { h += '<td class="dimmer">&mdash;</td>'; continue; }
+        var show = (v !== null && typeof v === 'object') ? JSON.stringify(v) : v;
+        h += '<td><input class="admcell" value="' + esc(show) + '" data-adm-live="' + esc(path) + '"></td>';
+      }
+      h += '</tr>';
+    }
+    h += '</table></div>';
+    if (arr.length > 300) h += '<p class="dim">Showing the first 300 of ' + arr.length + '. Use Raw Data to reach the rest.</p>';
+    return h;
+  }
+
+  function tabFams() {
+    var h = sect('Families', '<div class="admrow">' + btn('addfam', 'Found one', 'green') +
+      btn('joinfam1', 'Put me in the strongest family') + btn('leavefam', 'Take me out') + '</div>');
+    h += '<div class="scroll"><table class="t"><tr><th>Name</th><th>Tag</th><th class="c">Members</th><th class="r">Power</th><th class="c">Wars</th><th></th></tr>';
+    for (var i = 0; i < S.fams.length; i++) {
+      var f = S.fams[i];
+      h += '<tr><td><input class="admcell" value="' + esc(f.name) + '" data-adm-live="S.fams.' + i + '.name"></td>' +
+        '<td><input class="admcell" style="width:60px" value="' + esc(f.tag) + '" data-adm-live="S.fams.' + i + '.tag"></td>' +
+        '<td class="c">' + GAME.family.membersOf(f).length + '</td>' +
+        '<td class="r">' + fmt(GAME.family.power(f)) + '</td>' +
+        '<td class="c">' + f.wars.length + '</td>' +
+        '<td class="r">' + btn('famboom', 'Disband', 'red', ' data-id="' + f.id + '"') + '</td></tr>';
+    }
+    h += '</table></div>';
+    return h;
+  }
+
+  function tabFeeds() {
+    var h = sect('Put something in the newspaper',
+      '<input type="text" id="adm-news" placeholder="Somebody did something to somebody." style="width:70%"> ' +
+      btn('postnews', 'Print it', 'green'));
+    h += sect('Say something in the shoutbox as anybody',
+      '<div class="admrow"><input type="text" id="adm-who" placeholder="screen name (blank = a random one)" style="width:200px"> ' +
+      '<input type="text" id="adm-say" placeholder="what they say" style="width:45%"> ' + btn('postsay', 'Send') + '</div>');
+    h += sect('Send yourself mail from anybody',
+      '<div class="admrow"><input type="text" id="adm-mfrom" placeholder="screen name" style="width:180px"> ' +
+      '<input type="text" id="adm-msub" placeholder="subject" style="width:180px"></div>' +
+      '<textarea id="adm-mbody" placeholder="body" style="min-height:60px"></textarea>' + btn('postmail', 'Deliver it'));
+    h += sect('Housekeeping', '<div class="admrow">' +
+      btn('clearnews', 'Empty the newspaper') + btn('clearchat', 'Empty the shoutbox') +
+      btn('clearmail', 'Empty my inbox') + btn('clearlog', 'Empty my event log') + '</div>');
+    return h;
+  }
+
+  function tabConfig() {
+    var keys = [];
+    for (var k in CFG) if (CFG.hasOwnProperty(k) && typeof CFG[k] !== 'function') keys.push(k);
+    keys.sort();
+    var h = '<p class="dim">Every tuning constant in the game. Times are in milliseconds. A cap of 0 means no cap. ' +
+      'These are saved with your game.</p>' + grid(fields('CFG', keys));
+    h += '<div class="admrow">' + btn('cfgdefault', 'Put everything back', 'red') + '</div>';
+    return h;
+  }
+
+  function tabBrowse() {
+    var node = getPath(browsePath);
+    var t = typeOf(node);
+    var parts = browsePath.split('.');
+    var crumb = '';
+    for (var i = 0; i < parts.length; i++) {
+      crumb += (i ? ' <span class="dim">.</span> ' : '') +
+        btn('crumb', esc(parts[i]), i === parts.length - 1 ? 'gold' : '', ' data-id="' + esc(parts.slice(0, i + 1).join('.')) + '"');
+    }
+    var h = sect('Raw data browser',
+      '<p class="dim">Everything the game holds, live. <b>S</b> is your saved world, <b>CFG</b> the tuning constants, ' +
+      '<b>DATA</b> the content tables. Click into anything; edit any value in place.</p>' +
+      '<div class="admrow">' + btn('crumb', 'S', '', ' data-id="S"') + btn('crumb', 'CFG', '', ' data-id="CFG"') +
+      btn('crumb', 'DATA', '', ' data-id="DATA"') + '</div>' +
+      '<div class="admrow admcrumb">' + crumb + '</div>');
+
+    if (t !== 'object' && t !== 'array') {
+      return h + '<div class="admsect">' + field(browsePath, parts[parts.length - 1]) + '</div>';
+    }
+    var keys = [];
+    for (var k2 in node) if (Object.prototype.hasOwnProperty.call(node, k2)) keys.push(k2);
+    if (t !== 'array') keys.sort();
+    h += '<p class="dim">' + t + ', ' + keys.length + ' ' + (t === 'array' ? 'entries' : 'keys') + '</p>';
+    h += '<div class="scroll" style="max-height:56vh"><table class="t"><tr><th style="width:26%">Key</th><th>Value</th><th class="r">Type</th></tr>';
+    for (var j = 0; j < Math.min(keys.length, 400); j++) {
+      var key = keys[j], val = node[key], vt = typeOf(val);
+      var path = browsePath + '.' + key;
+      var cell;
+      if (vt === 'object' || vt === 'array') {
+        var n = 0; for (var z in val) if (Object.prototype.hasOwnProperty.call(val, z)) n++;
+        cell = btn('crumb', (vt === 'array' ? '[' + n + ' entries]' : '{' + n + ' keys}'), '', ' data-id="' + esc(path) + '"') +
+          ' <span class="dimmer">' + esc(JSON.stringify(val).slice(0, 90)) + '</span>';
+      } else if (vt === 'boolean') {
+        cell = '<input type="checkbox" data-adm="tog" data-path="' + esc(path) + '"' + (val ? ' checked' : '') + '>';
+      } else {
+        cell = '<input class="admcell" style="width:100%" value="' + esc(val === null ? 'null' : val) + '" data-adm-live="' + esc(path) + '">';
+      }
+      h += '<tr><td class="mono dim">' + esc(key) + '</td><td>' + cell + '</td><td class="r dimmer">' + vt + '</td></tr>';
+    }
+    h += '</table></div>';
+    if (keys.length > 400) h += '<p class="dim">Showing the first 400.</p>';
+    return h;
+  }
+
+  function tabSave() {
+    var h = sect('This game',
+      '<p class="dim">Storage: <b>' + GAME.save.backend() + '</b>. Round ' + GAME.season.number() +
+      ', ' + S.npcs.length + ' accounts, ' + (S.news || []).length + ' news lines, ' +
+      (S.forum.threads || []).length + ' forum threads.</p>' +
+      '<div class="admrow">' + btn('savenow', 'Save now', 'green') + btn('export', 'Download a copy') +
+      btn('showraw', 'Show the save text') + '</div>');
+    h += sect('Rebuild the city',
+      '<p class="dim">Keeps you exactly as you are and regenerates all two hundred accounts around you.</p>' +
+      '<div class="admrow">' + btn('regenFresh', 'Fresh round: everybody at level 1', 'gold') +
+      btn('regenEst', 'Established world: years of history already in it') + '</div>');
+    h += sect('Load a save', '<textarea id="adm-imp" placeholder="paste a save file"></textarea>' + btn('import', 'Load it'));
+    h += sect('Start over', '<div class="admrow">' + btn('wipe', 'Delete this game', 'red') + '</div>');
+    return h;
+  }
+
+  /* ================= shell ================= */
+
+  function render() {
+    if (!open) return;
+    var host = document.getElementById('adminpanel');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'adminpanel';
+      document.body.appendChild(host);
+      host.addEventListener('click', onClick, false);
+      host.addEventListener('change', onChange, false);
+      host.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.target.blur(); }, false);
+    }
+    var body;
+    try {
+      body = ({ you: tabYou, npcs: tabNpcs, ladder: tabLadder, world: tabWorld, economy: tabEconomy,
+        data: tabData, fams: tabFams, feeds: tabFeeds, config: tabConfig, browse: tabBrowse, save: tabSave }[tab] || tabYou)();
+    } catch (e) {
+      body = '<p class="bad">' + esc(e.message) + '</p><pre class="dim" style="white-space:pre-wrap">' + esc(e.stack) + '</pre>';
+    }
+    var tabsHtml = '';
+    for (var i = 0; i < TABS.length; i++) {
+      tabsHtml += '<a href="#" class="' + (tab === TABS[i][0] ? 'on' : '') + '" data-adm="tab" data-id="' + TABS[i][0] + '">' + TABS[i][1] + '</a>';
+    }
+    host.innerHTML =
+      '<div class="admwrap"><div class="admbar">' +
+      '<b>BACK OFFICE</b> <span class="dim">everything in the game, live</span>' +
+      '<span class="admclose" data-adm="close">[ close ]</span></div>' +
+      '<div class="admtabs">' + tabsHtml + '</div>' +
+      (lastMsg ? '<div class="admmsg">' + esc(lastMsg) + '</div>' : '') +
+      '<div class="admbody">' + body + '</div></div>';
+  }
+
+  function say(m) { lastMsg = m; }
+
+  function show() { open = true; lastMsg = 'Six clicks on CITY brings this back any time.'; render(); }
+  function hide() {
+    open = false;
+    var host = document.getElementById('adminpanel');
+    if (host && host.parentNode) host.parentNode.removeChild(host);
+    GAME.ui.render();
+  }
+  function isOpen() { return open; }
+
+  /* ---- edits ---- */
+  function onChange(e) {
+    var t = e.target;
+    var live = t.getAttribute && t.getAttribute('data-adm-live');
+    if (live) {
+      var err = setPath(live, t.value);
+      say(err ? err : live + ' = ' + t.value);
+      afterEdit();
+      return;
+    }
+    if (t.getAttribute && t.getAttribute('data-adm') === 'tog') {
+      setPath(t.getAttribute('data-path'), t.checked);
+      say(t.getAttribute('data-path') + ' = ' + t.checked);
+      afterEdit();
+    }
+  }
+
+  function afterEdit() {
+    try {
+      GAME.progress.applyLevel(S.player);
+      GAME.normalize.run();
+      GAME.ladder.sync();
+      reindex();
+    } catch (e) {}
+    GAME.save.markDirty();
+    render();
+  }
+
+  /* ---- every button on the panel ---- */
+  function v(sel, d) { var e = document.getElementById(sel); return e ? e.value : d; }
+  function nv(sel, d) { var x = Number(v(sel, d)); return isNaN(x) ? d : x; }
+  function P() { return S.player; }
+  function livingNpcs() { return S.npcs.filter(function (n) { return !n.dead; }); }
+
+  function forward(hours) {
+    var ms = hours * HOUR;
+    var slice = 7 * DAY;
+    var left = ms;
+    var realNow = Date.now;
+    var off = 0;
+    Date.now = function () { return realNow() + off; };
+    try {
+      var guard = 0;
+      while (left > 0 && guard++ < 200) {
+        var take = Math.min(slice, left);
+        off += take;
+        GAME.sim.catchUp(Date.now());
+        left -= take;
+      }
+    } finally { Date.now = realNow; }
+    /* the world moved on; re-base the timestamps so nothing is stuck in the future */
+    var now = Date.now();
+    S.lastSeen = now;
+    var shift = off;
+    var p = P();
+    ['hospUntil', 'jailUntil', 'bgUntil', 'travelUntil', 'ladderLock', 'retainerUntil'].forEach(function (k) {
+      if (p[k] > now) p[k] = Math.max(0, p[k] - shift);
+    });
+    for (var i = 0; i < S.npcs.length; i++) {
+      var n = S.npcs[i];
+      ['hospUntil', 'jailUntil', 'bgUntil', 'onlineUntil', 'ladderLock'].forEach(function (k) {
+        if (n[k] > now) n[k] = Math.max(0, n[k] - shift);
+      });
+      if (n.lastOnline > now) n.lastOnline = now;
+      if (n.lastRegen > now) n.lastRegen = now;
+      if (n.lastFightAt > now) n.lastFightAt = now;
+    }
+    S.seasonStart = Math.min(S.seasonStart || now, now);
+    GAME.ladder.sync();
+    say('Ran the city forward ' + (hours >= 24 ? Math.round(hours / 24) + ' days' : hours + ' hours') + '.');
+  }
+
+  function bestItem(cats, forWho) {
+    var best = null;
+    var all = GAME.items.all();
+    for (var i = 0; i < all.length; i++) {
+      var it = all[i];
+      if (cats.indexOf(it.cat) < 0) continue;
+      var v2 = (it.atk || 0) + (it.def || 0);
+      if (!best || v2 > (best.atk || 0) + (best.def || 0)) best = it;
+    }
+    return best;
+  }
+
+  var ACTS = {
+    close: function () { hide(); },
+    tab: function (id) { tab = id; },
+    crumb: function (id) { browsePath = id; },
+    dset: function (id) { S._admData = id; },
+    search: function () { npcQuery = v('adm-q', ''); },
+    clearq: function () { npcQuery = ''; },
+    pick: function (id) { npcSel = Number(id); },
+    npcClose: function () { npcSel = null; },
+
+    /* --- you --- */
+    lvlup: function () { GAME.progress.gainXP(GAME.progress.xpForLevel(P().level + 1) - P().xp); },
+    lvl10: function () { GAME.progress.gainXP(GAME.progress.xpForLevel(P().level + 10) - P().xp); },
+    lvl50: function () { GAME.progress.gainXP(GAME.progress.xpForLevel(P().level + 50) - P().xp); },
+    maxrank: function () {
+      var r = DATA.ranks[DATA.ranks.length - 1];
+      GAME.progress.gainXP(Math.max(0, r.xp - P().xp));
+      say('You are ' + r.name + '.');
+    },
+    resetlvl: function () { var p = P(); p.level = 1; p.xp = 0; GAME.progress.applyLevel(p); },
+    stats100: function () { var p = P(); ['str', 'def', 'spd', 'dex'].forEach(function (k) { p[k] += 100; }); },
+    stats10k: function () { var p = P(); ['str', 'def', 'spd', 'dex'].forEach(function (k) { p[k] += 10000; }); },
+    statsmatch: function () {
+      var p = P(), best = null;
+      livingNpcs().forEach(function (n) { if (!best || GAME.combat.power(n) > GAME.combat.power(best)) best = n; });
+      if (!best) return;
+      ['str', 'def', 'spd', 'dex'].forEach(function (k) { p[k] = Math.max(p[k], best[k]); });
+      p.iq = Math.max(p.iq, best.iq || 10);
+      say('Matched ' + best.name + '.');
+    },
+    fillall: function () {
+      var p = P();
+      p.energy = p.energyMax; p.will = p.willMax; p.nerve = p.nerveMax;
+      p.dexg = p.dexgMax; p.attacks = p.attacksMax; p.hospUntil = 0; p.health = maxHealth(p);
+    },
+    emptyall: function () { var p = P(); p.energy = 0; p.will = 0; p.nerve = 0; p.dexg = 0; p.attacks = 0; },
+    cash1m: function () { P().money += 1e6; },
+    cash1b: function () { P().money += 1e9; },
+    cash1t: function () { P().money += 1e12; },
+    pts1k: function () { P().points = (P().points || 0) + 1000; },
+    broke: function () { P().money = 0; P().bank = 0; P().points = 0; },
+    clearstatus: function () {
+      var p = P();
+      p.hospUntil = 0; p.jailUntil = 0; p.travelUntil = 0; p.ladderLock = 0; p.bgUntil = 0;
+      p.health = maxHealth(p); S.cd = {}; S.chLock = {};
+    },
+    hospme: function () { GAME.player.hospitalize(30 * MIN, 'The back office put you here.'); },
+    jailme: function () { GAME.player.jail(30 * MIN, 'The back office put you here.', 5000); },
+
+    /* --- npcs --- */
+    addnpc: function () {
+      var used = {};
+      S.npcs.forEach(function (n) { used[n.name.toLowerCase()] = 1; });
+      var n2 = GAME.state.makeNPC(S.nextNpcId++, used, NOW(), true);
+      S.npcs.push(n2); reindex();
+      npcSel = n2.id;
+      say('Created ' + n2.name + '.');
+    },
+    bulklvl: function () {
+      livingNpcs().forEach(function (n) { GAME.npc.gainXP(n, GAME.progress.xpForLevel(n.level + 5) - n.xp); });
+      say('Everybody gained five levels.');
+    },
+    bulkreset: function () {
+      livingNpcs().forEach(function (n) {
+        n.level = 1; n.xp = 0; n.str = 10; n.def = 10; n.spd = 10; n.dex = 10; n.iq = 10;
+        n.money = rint(300, 800); n.bank = 0; n.wpn = null; n.arm = null; n.w = 0; n.l = 0;
+        n.crimes = 0; n.respect = 0; GAME.npc.recompute(n);
+      });
+      say('The whole city is back at level one.');
+    },
+    bulkheal: function () {
+      S.npcs.forEach(function (n) { n.hospUntil = 0; n.jailUntil = 0; n.health = n.healthMax; });
+      say('Everybody is out.');
+    },
+    bulkcash: function () { livingNpcs().forEach(function (n) { n.money += 1e6; }); },
+    npcHere: function () { var n = byId(npcSel); if (n) { n.online = true; n.onlineUntil = NOW() + 2 * HOUR; n.dead = false; } },
+    npcGone: function () { var n = byId(npcSel); if (n) { n.online = false; n.onlineUntil = 0; } },
+    npcLove: function () { var n = byId(npcSel); if (n) { n.op = 100; n.grudge = 0; n.fear = 0; } },
+    npcHate: function () { var n = byId(npcSel); if (n) { n.op = -100; n.grudge = 100; } },
+    npcLadder: function () {
+      var n = byId(npcSel); if (!n) return;
+      if (GAME.ladder.rungOf(n.id)) return say('Already on it.');
+      S.ladder.splice(S.ladder.length - 1, 1, n.id);
+      GAME.ladder.sync(); say(n.name + ' is on rung ' + GAME.ladder.rungOf(n.id) + '.');
+    },
+    npcGear: function () {
+      var n = byId(npcSel); if (!n) return;
+      var w = GAME.items.bestFor(['melee', 'pistol', 'smg', 'rifle', 'heavy'], n.level, Infinity);
+      var a = GAME.items.bestFor(['armor'], n.level, Infinity);
+      if (w) n.wpn = w.id; if (a) n.arm = a.id;
+      GAME.npc.recompute(n);
+    },
+    npcKill: function () { var n = byId(npcSel); if (n) { n.dead = true; n.online = false; } },
+
+    /* --- ladder --- */
+    ladme1: function () { putMeOn(1); },
+    ladme20: function () { putMeOn(CFG.LADDER_RUNGS); },
+    ladoff: function () {
+      var i = S.ladder.indexOf(0);
+      if (i >= 0) { S.ladder.splice(i, 1); GAME.sim.backfillLadder(); GAME.ladder.sync(); }
+    },
+    ladseed: function () {
+      var all = livingNpcs().slice().sort(function (a, b) { return GAME.combat.power(b) - GAME.combat.power(a); });
+      S.ladder = all.slice(0, CFG.LADDER_RUNGS).map(function (n) { return n.id; });
+      GAME.ladder.sync(); say('Reseeded from raw power.');
+    },
+    ladshuffle: function () { shuffle(S.ladder); GAME.ladder.sync(); },
+    ladchal: function () { var f = GAME.ladder.npcChallengeTick(50); say(f + ' challenges fought.'); },
+    ladup: function (id, n) {
+      var r = Number(n); if (r <= 1) return;
+      var t2 = S.ladder[r - 1]; S.ladder[r - 1] = S.ladder[r - 2]; S.ladder[r - 2] = t2; GAME.ladder.sync();
+    },
+    laddown: function (id, n) {
+      var r = Number(n); if (r >= S.ladder.length) return;
+      var t3 = S.ladder[r - 1]; S.ladder[r - 1] = S.ladder[r]; S.ladder[r] = t3; GAME.ladder.sync();
+    },
+    ladkick: function (id, n) {
+      S.ladder.splice(Number(n) - 1, 1); GAME.sim.backfillLadder(); GAME.ladder.sync();
+    },
+
+    /* --- world --- */
+    fw1h: function () { forward(1); }, fw6h: function () { forward(6); },
+    fw1d: function () { forward(24); }, fw3d: function () { forward(72); },
+    fw7d: function () { forward(168); }, fw30d: function () { forward(720); },
+    fw90d: function () { forward(2160); },
+    fwn: function () { forward(Math.max(0.1, nv('adm-fw', 24))); },
+    endround: function () { S.seasonStart = NOW() - CFG.SEASON_LENGTH - MIN; say('The round is over.'); },
+    rumble: function () { var r = GAME.season.rumble(); say(r.err || (r.result.champion + ' won The Rumble.')); },
+    nextround: function () { var r = GAME.season.reset(); say(r.err || ('Round ' + r.round + ' has started.')); },
+    allon: function () { S.npcs.forEach(function (n) { if (!n.dead) { n.online = true; n.onlineUntil = NOW() + 3 * HOUR; } }); },
+    alloff: function () { S.npcs.forEach(function (n) { n.online = false; n.onlineUntil = 0; }); },
+    presence: function () { GAME.sim.updatePresence(NOW(), false); },
+    evAttackMe: function () {
+      var pool = livingNpcs().filter(function (n) { return !GAME.ladder.busy(n); });
+      var n3 = pick(pool);
+      if (!n3) return say('Nobody available.');
+      n3.attacks = Math.max(1, n3.attacks); n3.energy = Math.max(50, n3.energy);
+      S.cd = {}; S.player.bgUntil = 0;
+      GAME.ladder.npcAttack(n3, 0);
+      say(n3.name + ' came for you.');
+    },
+    evMailMe: function () {
+      var n4 = pick(livingNpcs());
+      GAME.mail.fromNpc(n4, pick(['threat', 'friendly', 'scam', 'familyInvite', 'tradeOffer', 'respect', 'spam']));
+      say('Mail from ' + n4.name + '.');
+    },
+    evBounty: function () {
+      var n5 = pick(livingNpcs().filter(function (n) { return n.money > 10000; })) || pick(livingNpcs());
+      GAME.hitlist.npcPlace(n5, 0, Math.max(25000, Math.round(n5.money * 0.3)));
+      say(n5.name + ' put money on you.');
+    },
+    evChat: function () {
+      var on = GAME.sim.onlineList();
+      for (var i = 0; i < 12; i++) { var w = pick(on.length ? on : S.npcs); if (w) { w.lastChat = 0; GAME.npc.chatEvent(w, null, NOW()); } }
+      say('The shoutbox is going.');
+    },
+    evWar: function () {
+      if (S.fams.length < 2) return say('Not enough families.');
+      var a = pick(S.fams), b = pick(S.fams);
+      if (a.id === b.id) return;
+      if (a.wars.indexOf(b.id) < 0) { a.wars.push(b.id); b.wars.push(a.id); }
+      GAME.feed.newsFrom('familyWar', 'war', { family: a.name, other: b.name, who: (byId(a.leader) || {}).name });
+      say(a.name + ' is at war with ' + b.name + '.');
+    },
+    evNews: function () { for (var i = 0; i < 30; i++) GAME.feed.newsFrom('flavor', 'flavor', {}); },
+    simstop: function () { GAME.sim.stop(); say('The world is paused.'); },
+    simstart: function () { GAME.sim.start(); say('Running again.'); },
+
+    /* --- economy --- */
+    reseedmkt: function () { GAME.market.seed(NOW()); },
+    reseedauc: function () { GAME.auction.seed(NOW()); },
+    reseedpts: function () { GAME.points.seedMarket(NOW()); },
+    clearmkt: function () { S.market = []; S.auction = []; S.pointMarket = []; },
+    allitems: function () {
+      GAME.items.all().forEach(function (it) { GAME.items.add(it.id, 1); });
+      say('One of everything is in your inventory.');
+    },
+    allprops: function () {
+      S.player.props = GAME.props.list().map(function (pr) { return pr.id; });
+      say('You own the whole city.');
+    },
+    allgyms: function () { S.player.gyms = GAME.gym.list().map(function (g) { return g.id; }); },
+    bestgear: function () {
+      var w = bestItem(['melee', 'pistol', 'smg', 'rifle', 'heavy']);
+      var a = bestItem(['armor']);
+      if (w) { GAME.items.add(w.id, 1); GAME.items.equip(w.id); }
+      if (a) { GAME.items.add(a.id, 1); GAME.items.equip(a.id); }
+      say('Kitted out.');
+    },
+    clearhits: function () { S.hitlist = []; },
+
+    /* --- families --- */
+    addfam: function () {
+      var id = (S.fams.length ? Math.max.apply(null, S.fams.map(function (f) { return f.id; })) : 0) + 1;
+      S.fams.push({ id: id, name: pick(DATA.names.familyNames) || ('Crew ' + id), tag: pick(DATA.names.familyTags) || 'NEW',
+        leader: pick(livingNpcs()).id, founded: NOW(), members: [], respect: 0, money: 0, wars: [], motd: 'Recruiting.', open: true, playerMember: false });
+      say('Founded.');
+    },
+    joinfam1: function () {
+      var f = GAME.family.ranked()[0];
+      if (!f) return;
+      S.player.fam = f.id; S.player.famRole = 'boss'; f.playerMember = true;
+      say('You are in ' + f.name + '.');
+    },
+    leavefam: function () {
+      var f = famById(S.player.fam);
+      if (f) f.playerMember = false;
+      S.player.fam = null; S.player.famRole = null;
+    },
+    famboom: function (id) {
+      var i = -1;
+      for (var k = 0; k < S.fams.length; k++) if (S.fams[k].id === Number(id)) i = k;
+      if (i < 0) return;
+      var f = S.fams[i];
+      S.npcs.forEach(function (n) { if (n.fam === f.id) { n.fam = null; n.famRole = 'soldier'; } });
+      if (S.player.fam === f.id) { S.player.fam = null; S.player.famRole = null; }
+      S.fams.splice(i, 1);
+      say('Disbanded.');
+    },
+
+    /* --- feeds --- */
+    postnews: function () { var t4 = v('adm-news', ''); if (t4) { GAME.feed.news('flavor', t4, {}); say('Printed.'); } },
+    postsay: function () {
+      var who = String(v('adm-who', '')).toLowerCase().trim();
+      var n6 = null;
+      S.npcs.forEach(function (n) { if (n.name.toLowerCase() === who) n6 = n; });
+      if (!n6) n6 = pick(livingNpcs());
+      var txt = v('adm-say', '');
+      if (!txt) return say('Nothing to say.');
+      GAME.feed.say(n6, GAME.npc.style(n6, txt));
+      say(n6.name + ' said it.');
+    },
+    postmail: function () {
+      var who2 = String(v('adm-mfrom', '')).toLowerCase().trim();
+      var n7 = null;
+      S.npcs.forEach(function (n) { if (n.name.toLowerCase() === who2) n7 = n; });
+      if (!n7) n7 = pick(livingNpcs());
+      S.mail.push({ id: S.nextMailId++, t: NOW(), from: n7.id, fromName: n7.name,
+        subj: v('adm-msub', '(no subject)'), body: v('adm-mbody', ''), read: false, folder: 'in' });
+      say('Delivered from ' + n7.name + '.');
+    },
+    clearnews: function () { S.news = []; },
+    clearchat: function () { S.chat = []; },
+    clearmail: function () { S.mail = []; },
+    clearlog: function () { S.log = []; },
+
+    /* --- config --- */
+    cfgdefault: function () {
+      if (!GAME.admin._cfg0) return say('No snapshot to go back to.');
+      for (var k in GAME.admin._cfg0) if (GAME.admin._cfg0.hasOwnProperty(k)) CFG[k] = GAME.admin._cfg0[k];
+      say('Tuning restored.');
+    },
+
+    /* --- save --- */
+    savenow: function () { GAME.save.write(true); say('Saved.'); },
+    export: function () { GAME.save.download(); },
+    showraw: function () { GAME.ui.modal('Save data', '<textarea style="min-height:240px" readonly>' + esc(GAME.save.exportText()) + '</textarea>'); },
+    import: function () {
+      var err = GAME.save.importText(v('adm-imp', ''));
+      if (err) return say(err);
+      reindex(); GAME.normalize.run(); GAME.progress.applyLevel(S.player);
+      say('Loaded.');
+    },
+    regenFresh: function () { regen(false); },
+    regenEst: function () { regen(true); },
+    wipe: function () {
+      GAME.sim.stop();
+      GAME.save.wipe().then(function () { S = null; hide(); GAME.boot.newGameScreen(); });
+    }
+  };
+
+  /* Rebuild the roster around the player without touching the player. */
+  function regen(established) {
+    var keep = JSON.parse(JSON.stringify(S.player));
+    var hall = S.hall, round = S.roundNo, life = S.lifetime, settings = S.settings;
+    GAME.state.newGame({ name: keep.name, city: keep.city, hood: keep.hood, gender: keep.gender, established: established });
+    S.player = keep;
+    S.hall = hall || []; S.roundNo = round || 1; S.lifetime = life; S.settings = settings || S.settings;
+    reindex();
+    GAME.sim.backfillLadder();
+    GAME.ladder.sync();
+    say(established ? 'Rebuilt with years of history in it.' : 'Rebuilt: two hundred accounts at level one.');
+  }
+
+  function putMeOn(rung) {
+    var i = S.ladder.indexOf(0);
+    if (i >= 0) S.ladder.splice(i, 1);
+    S.ladder.splice(clamp(rung, 1, CFG.LADDER_RUNGS) - 1, 0, 0);
+    while (S.ladder.length > CFG.LADDER_RUNGS) S.ladder.pop();
+    GAME.ladder.sync();
+    say('You are on rung ' + GAME.ladder.rungOf(0) + '.');
+  }
+
+  function onClick(e) {
+    var el2 = e.target, act = null, depth = 0;
+    while (el2 && depth++ < 5) {
+      if (el2.getAttribute) { act = el2.getAttribute('data-adm'); if (act) break; }
+      el2 = el2.parentNode;
+    }
+    if (!act || act === 'tog') return;
+    e.preventDefault();
+    var fn = ACTS[act];
+    if (!fn) return;
+    try { fn(el2.getAttribute('data-id'), el2.getAttribute('data-n')); }
+    catch (err) { say('That broke: ' + err.message); if (window.console) console.error(err); }
+    if (act !== 'close' && act !== 'wipe') {
+      GAME.save.markDirty();
+      try { GAME.ladder.sync(); reindex(); } catch (e2) {}
+      render();
+      GAME.ui.render();
+      render();
+    }
+  }
+
+  return {
+    show: show, hide: hide, isOpen: isOpen, render: render, say: say,
+    getPath: getPath, setPath: setPath, afterEdit: afterEdit, forward: forward,
+    act: function (a, id, n) { if (ACTS[a]) ACTS[a](id, n); },
+    setTab: function (t2) { tab = t2; render(); }, tab: function () { return tab; },
+    _cfg0: null
+  };
+})();
+
 
 
 /* ===== 90-main.js ===== */
@@ -16202,6 +18763,7 @@ GAME.boot = (function () {
     RNG.init(S.seed, S.rngCursor || 0);
     reindex();
     CFG.pace = (S.settings && S.settings.pace) || 1;
+    if (S.cfg) for (var ck in S.cfg) if (S.cfg.hasOwnProperty(ck) && typeof S.cfg[ck] !== 'function') CFG[ck] = S.cfg[ck];
     GAME.progress.applyLevel(S.player);
     if (!S.player._rankName) S.player._rankName = GAME.progress.rankFor(S.player.xp).name;
     GAME.sim.backfillLadder();
@@ -16249,7 +18811,12 @@ GAME.boot = (function () {
     realRender = GAME.ui.render;
 
     GAME.normalize.run();
+    GAME.admin._cfg0 = JSON.parse(JSON.stringify(CFG));
     GAME.actions.bind();
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && GAME.admin.isOpen()) GAME.admin.hide();
+    }, false);
 
     window.addEventListener('hashchange', function () {
       var h = GAME.ui.fromHash();

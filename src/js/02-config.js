@@ -18,8 +18,11 @@ var CFG = {
   HEALTH_TICK: 90 * 1000,   // +1% health   / 90 s, out of hospital only
   ATTACK_TICK: 20 * MIN,    // +1 Attack    / 20 min
 
-  /* hard ceilings on the gauges, whatever the level */
-  CAP: { energy: 300, will: 150, nerve: 50, dexg: 120, health: 2000, attacks: 10 },
+  /* Ceilings on the gauges. Zero means no ceiling, which is the default:
+     there is no level cap in this game and nothing else is capped either.
+     The admin panel can put a lid back on any of them. */
+  CAP: { energy: 0, will: 0, nerve: 0, dexg: 0, health: 0, attacks: 0 },
+  MAX_LEVEL: 0,             // 0 = uncapped
 
   /* ---- caps ---- */
   NEWS_CAP: 400,
