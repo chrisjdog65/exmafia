@@ -29,12 +29,46 @@ two operator/host pages plus the game directory listing.
 | Money: "crimes and selling items in the item market or auction, selling points or walking the streets" | fairgamers |
 | Season resets on an 8-week cycle | fairgamers |
 
+## Later additions, and where they came from
+
+The second pass drew on a wider research sweep that reached the operator's own
+help pages more completely. Newly **confirmed** and now implemented:
+
+| Fact | Source |
+|---|---|
+| exMafia was a customised fork of **MCCodes v2**, the PHP engine behind most 2006–2011 mafia browser games — its page set and stat vocabulary match | engine-lineage analysis across indexed sources |
+| The five trainable stats are **Strength, Agility, Guard, Labor, IQ**, with exMafia's own definitions: Strength "how hard you will hit", Agility "how easy it is for an opponent to hit you", Guard "how much damage an opponent will do to you", Labor "enables you to get a better job", IQ "determines how successful you are at crimes, and also helps you bust people out of jail easier" | fairgamers |
+| **IQ is not gym-trainable** — it comes from the schools, from working, and from the Trade Point menu | fairgamers |
+| **Two gyms**: "either your energy in the regular gym, or your points in the point gym" | fairgamers |
+| Gym output scales with **Will** ("the higher the Will, the more stats you get") and with **level** | fairgamers |
+| **Schools**: "the more expensive the class, the longer the class, and the more stats you receive when the class is over" | fairgamers |
+| Truck Stop entry needs "a concealed handgun, a docking yard day pass, and ammo"; the run starts on the **beer truck** at levels 1–4; the **Downtown Fence** wants **25 units** | fairgamers |
+| **Rounds**: "unlike most RPGs Exmafia has rounds and after a given round is over the players are reset to having nothing" — eight weeks, then **The Rumble**, "a last man standing free-for-all with a $500 prize" | fairgamers |
+| Jail: "each unsuccessful crime will earn you time in Jail. Jail time is in real time, and the amount of time depends on how risky the crime was" | fairgamers |
+| Three markets: **Shop**, **Item Market** ("all sales are final") and **Auction**; plus a player-run **Point Market** on the City page | fairgamers |
+| The bank's purpose is **mug-proofing**, and auto-banking was a donator perk | fairgamers |
+| Voting: 5–10 points a link, **up to 80 a day**; a referral pays **300 points** when they reach level 4 | fairgamers |
+
+Reconstructed in the same pass, and flagged as such:
+
+* **Organised Crime** and **The Notice Board** are the two systems added at the player's
+  request. Organised Crime is a documented feature of the MCCodes engine family exMafia was
+  built on, but no source describes exMafia's own version, so its jobs, roles, crew mechanics
+  and numbers are all invented here. The Notice Board has no precedent in exMafia at all — it
+  exists to give the 200 simulated accounts a way to ask the player for things.
+* **Everybody starting at level 1.** This is how an exMafia round genuinely began, and it is
+  now the default. The alternative — a world generated with years of history already in it —
+  is still available from the back office.
+* **No level cap.** exMafia had an eight-week round and never needed one. Removing it is a
+  deliberate departure, and the experience curve is generated to level 600 and extrapolated
+  beyond.
+
 ## Reconstructed where sources are silent
 
-* **Brave** is the crime resource and **Will** the work/jobs resource. Energy's three uses are
-  confirmed; Brave and Will are documented as gauges but their sinks are not stated. This split
-  is the genre standard (Unforgiven War, the closest documented sibling, uses
-  "Brave for missions, Energy for attacking, Will for increasing stats").
+* **Brave** is the crime resource; **Will** multiplies gym output rather than being spent on
+  anything directly; **Dexterity** is the Truck Stop resource. Energy's uses are confirmed, and
+  Will's role as the gym multiplier is confirmed; that Brave's only sink is crimes, and
+  Dexterity's only sink is the Truck Stop, is inference from what is left over.
 * Regeneration rates. No source gives a tick rate — only that the gauges refill in real time and
   that the game beats hourly and daily.
 * Every specific number: crime payouts, XP curve, item prices, hospital/jail durations, ladder

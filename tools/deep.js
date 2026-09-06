@@ -116,16 +116,18 @@ const FILE = 'file://' + path.resolve(__dirname, '..', 'exmafia.html');
         else if (typeof v === 'number' && !isFinite(v)) problems.push(label + '.' + k + ' = ' + v);
       });
     }
-    chk(S.player, 'player', ['level', 'xp', 'money', 'bank', 'str', 'def', 'spd', 'dex', 'lab', 'iq', 'energy', 'will', 'nerve', 'health', 'attacks', 'points', 'respect']);
+    chk(S.player, 'player', ['level', 'xp', 'money', 'bank', 'str', 'def', 'spd', 'dex', 'iq', 'energy', 'will', 'nerve', 'dexg', 'health', 'attacks', 'points', 'respect']);
     S.npcs.forEach((n, i) => {
       if (i > 40) return;
-      chk(n, 'npc[' + i + ']', ['level', 'xp', 'money', 'str', 'def', 'spd', 'dex', 'health', 'healthMax', 'rung']);
+      chk(n, 'npc[' + i + ']', ['level', 'xp', 'money', 'str', 'def', 'spd', 'dex', 'iq', 'health', 'healthMax', 'rung']);
       if (n.money < 0) problems.push(n.name + ' has negative money ' + Math.round(n.money));
       if (n.health > n.healthMax + 1) problems.push(n.name + ' hp over max');
     });
     const seen = {};
     S.ladder.forEach(id => { if (seen[id]) problems.push('duplicate ladder entry ' + id); seen[id] = 1; });
     if (S.ladder.length !== 20) problems.push('ladder length ' + S.ladder.length);
+    if (S.npcs.filter(n => !n.dead).length !== 200) problems.push('living roster is ' + S.npcs.filter(n => !n.dead).length + ', should be 200');
+    if (S.player.lab !== undefined) problems.push('the old duplicate Labour stat is back');
     const names = {};
     S.npcs.forEach(n => { if (names[n.name]) problems.push('duplicate name ' + n.name); names[n.name] = 1; });
     return problems;

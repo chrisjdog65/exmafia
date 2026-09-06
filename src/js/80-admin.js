@@ -478,42 +478,82 @@ GAME.admin = (function () {
   function P() { return S.player; }
   function livingNpcs() { return S.npcs.filter(function (n) { return !n.dead; }); }
 
+  /* Every timestamp the game holds, so a skip can move the whole world
+     instead of only the parts somebody remembered to list. */
+  var TIMEKEYS = {
+    createdAt: 1, lastSeen: 1, savedAt: 1, seasonStart: 1, joined: 1,
+    hospUntil: 1, jailUntil: 1, bgUntil: 1, travelUntil: 1, ladderLock: 1,
+    retainerUntil: 1, lastFightAt: 1, rungSince: 1, lastOnline: 1, lastRegen: 1,
+    lastChat: 1, lastAct: 1, onlineUntil: 1, lastSeenPlayer: 1, founded: 1,
+    t: 1, posted: 1, expires: 1, taken: 1, until: 1, ends: 1, at: 1
+  };
+
+  function shiftNode(node, ms, depth) {
+    if (!node || typeof node !== 'object' || depth > 9) return;
+    var isArr = Object.prototype.toString.call(node) === '[object Array]';
+    for (var k in node) {
+      if (!Object.prototype.hasOwnProperty.call(node, k)) continue;
+      var v = node[k];
+      if (typeof v === 'number') {
+        if (!isArr && TIMEKEYS[k] && v > 1e11) node[k] = v - ms;
+      } else if (v && typeof v === 'object') {
+        shiftNode(v, ms, depth + 1);
+      }
+    }
+  }
+
+  /* Maps whose VALUES are timestamps and whose keys are ids. */
+  function shiftMap(m, ms) {
+    if (!m) return;
+    for (var k in m) if (Object.prototype.hasOwnProperty.call(m, k) && typeof m[k] === 'number' && m[k] > 1e11) m[k] -= ms;
+  }
+
+  function shiftWorld(ms) {
+    shiftNode(S, ms, 0);
+    shiftMap(S.cd, ms); shiftMap(S.chLock, ms); shiftMap(S.revenge, ms); shiftMap(S.ocCool, ms);
+    shiftMap(S.player.regen, ms);
+    for (var i = 0; i < S.npcs.length; i++) if (S.npcs[i].regen) shiftMap(S.npcs[i].regen, ms);
+  }
+
+  /* Run the whole city forward. The clock is advanced for real while the
+     simulation runs, then every timestamp in the world is pulled back by
+     the same amount - so the round really is that much older, hospital
+     clocks are still short, and nothing is left sitting in the future. */
   function forward(hours) {
-    var ms = hours * HOUR;
-    var slice = 7 * DAY;
-    var left = ms;
+    var ms = Math.max(0, hours) * HOUR;
+    if (!ms) return;
     var realNow = Date.now;
     var off = 0;
     Date.now = function () { return realNow() + off; };
     try {
-      var guard = 0;
-      while (left > 0 && guard++ < 200) {
-        var take = Math.min(slice, left);
+      var left = ms, guard = 0;
+      while (left > 0 && guard++ < 400) {
+        var take = Math.min(7 * DAY, left);
         off += take;
         GAME.sim.catchUp(Date.now());
         left -= take;
       }
     } finally { Date.now = realNow; }
-    /* the world moved on; re-base the timestamps so nothing is stuck in the future */
-    var now = Date.now();
-    S.lastSeen = now;
-    var shift = off;
-    var p = P();
-    ['hospUntil', 'jailUntil', 'bgUntil', 'travelUntil', 'ladderLock', 'retainerUntil'].forEach(function (k) {
-      if (p[k] > now) p[k] = Math.max(0, p[k] - shift);
-    });
-    for (var i = 0; i < S.npcs.length; i++) {
-      var n = S.npcs[i];
-      ['hospUntil', 'jailUntil', 'bgUntil', 'onlineUntil', 'ladderLock'].forEach(function (k) {
-        if (n[k] > now) n[k] = Math.max(0, n[k] - shift);
+
+    shiftWorld(off);
+    S.lastSeen = Date.now();
+
+    /* anything still sitting in the future after the shift was set during
+       the very last slice; leave it, but never longer than a day out */
+    var now = Date.now(), capAt = now + DAY;
+    var clampFuture = function (e) {
+      ['hospUntil', 'jailUntil', 'bgUntil', 'travelUntil', 'ladderLock', 'onlineUntil'].forEach(function (k) {
+        if (e[k] > capAt) e[k] = capAt;
       });
-      if (n.lastOnline > now) n.lastOnline = now;
-      if (n.lastRegen > now) n.lastRegen = now;
-      if (n.lastFightAt > now) n.lastFightAt = now;
-    }
-    S.seasonStart = Math.min(S.seasonStart || now, now);
+      if (e.lastOnline > now) e.lastOnline = now;
+      if (e.lastRegen > now) e.lastRegen = now;
+      if (e.lastFightAt > now) e.lastFightAt = now;
+    };
+    clampFuture(S.player);
+    for (var i = 0; i < S.npcs.length; i++) clampFuture(S.npcs[i]);
     GAME.ladder.sync();
-    say('Ran the city forward ' + (hours >= 24 ? Math.round(hours / 24) + ' days' : hours + ' hours') + '.');
+    say('Ran the city forward ' + (hours >= 24 ? Math.round(hours / 24) + ' days' : hours + ' hours') +
+      '. It is now round ' + GAME.season.number() + ', week ' + GAME.season.week() + '.');
   }
 
   function bestItem(cats, forWho) {

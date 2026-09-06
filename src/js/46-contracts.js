@@ -100,6 +100,7 @@ GAME.contracts = (function () {
       family: (famById(poster.fam) || {}).name || 'my people', me: S.player.name
     };
     c.title = GAME.npc.style(poster, tpl(bankLine('titles', k.id, k.name), vars), true);
+    if (c.title.length > 78) c.title = c.title.slice(0, 76) + '..';
     c.body = GAME.npc.style(poster, tpl(bankLine('bodies', k.id, describe(c) + '\nPays ' + money(c.reward) + '.'), vars));
     return c;
   }

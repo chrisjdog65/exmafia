@@ -61,11 +61,22 @@ GAME.npc = (function () {
     return s;
   }
 
+  /* People fat-finger words. They do not fat-finger the price they are
+     quoting you - a mangled number reads as a broken game rather than a
+     bad typist, so digits and currency are left alone. */
+  function isNum(c) { return c >= '0' && c <= '9'; }
+  function protectedAt(arr, i) {
+    if (isNum(arr[i]) || arr[i] === '$' || arr[i] === '%') return true;
+    if ((arr[i] === ',' || arr[i] === '.') && isNum(arr[i - 1]) && isNum(arr[i + 1])) return true;
+    return isNum(arr[i - 1]) || isNum(arr[i + 1]);
+  }
+
   function typoify(s, rate) {
     if (rate <= 0) return s;
     var out = s.split('');
     for (var i = 1; i < out.length - 1; i++) {
       if (out[i] === ' ' || out[i - 1] === ' ') continue;
+      if (protectedAt(out, i)) continue;
       var r = seededFloat(s, 'ty' + i);
       if (r < rate * 0.4) { var t = out[i]; out[i] = out[i + 1]; out[i + 1] = t; i++; }
       else if (r < rate * 0.6) { out[i] = out[i] + out[i]; }
@@ -93,7 +104,8 @@ GAME.npc = (function () {
     if (v.lower) s = s.toLowerCase();
     else if (v.shout && !isSubject && seededFloat(s, 'sh') < 0.4) s = s.toUpperCase();
     if (v.leet) {
-      s = s.replace(/[eaos]/g, function (c) {
+      s = s.replace(/[eaos]/g, function (c, at) {
+        if (/[\d$,]/.test(s.charAt(at - 1)) || /[\d,]/.test(s.charAt(at + 1))) return c;
         return seededFloat(s + c, 'lt') < 0.35 ? LEET[c] : c;
       });
     }

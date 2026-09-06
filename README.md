@@ -61,11 +61,14 @@ city resets to level one. Your name on the wall carries over. Nothing else does.
 ### Organised Crime
 
 Some jobs cannot be done alone. If you are in a family you put a crew together out of it, one
-player to a role — Driver, Safecracker, Alarm Man, Inside Man — and every one of them rolls
-against their own stats on the night. Bring a driver with no Agility and you lose the van on
-the ramp. One slip can be covered. Two and everybody walks home, or does not. The pot is split
-round the crew, each job cools off for hours, and the other families are running their own
-jobs whether you are looking or not.
+player to a role — Counter, Cleaner, Wheelman, Safecracker, Alarm Man, Inside Man — and every
+one of them rolls against their own stats on the night. Bring a driver with no Agility and you
+lose the van on the ramp. One slip can be covered. Two and everybody walks home, or does not.
+The pot is split round the crew, each job cools off for hours, and the other families are
+running their own jobs whether you are looking or not.
+
+Twelve jobs, from turning over a liquor store at level 5 with two men, to taking the Mint at
+level 140 with eight.
 
 ![Organised Crime](docs/screenshot-oc.png)
 
@@ -76,6 +79,9 @@ bed. Somebody bailed out. A piece fetched that they cannot be seen buying. Proof
 a shift in. You can carry three jobs at once; finish one and the poster pays in cash and
 points and thinks better of you for good, sit on it for a day and they take it back, tell the
 shoutbox, and remember.
+
+Seven kinds of job, and the postings are written in the poster's own voice — the tryhard, the
+newbie, the one who will not pay, the polite veteran, the obvious scam.
 
 ![The Notice Board](docs/screenshot-board.png)
 
@@ -148,10 +154,21 @@ guns, bodies, points and squad cars; the Trade Point menu and its refill-Will-be
 voting for 5–10 points up to 80 a day; the Truck Stop to Downtown Fence run and its twenty-five
 unit minimum; the schools; the eight-week round and The Rumble; Dewey, Screwem and Howe.
 
+Also sourced: the five stats and exMafia's own one-line definitions of them, IQ being the one
+stat no gym will sell you, the two gyms, Will multiplying gym output, the schools, the Truck
+Stop's handgun-pass-and-ammo entry fee and the fence's 25-unit minimum, the eight-week round
+ending in The Rumble, the three markets, and voting for up to 80 points a day.
+
 **Reconstructed, because no source survives:** every specific number. Regeneration rates, the
 experience curve, crime payouts, item prices, hospital and jail timers, combat equations, and the
 size of the ladder. The stat *roles* are confirmed; the formulas behind them are tuned by hand
 and validated by simulation.
+
+**Deliberate departures**, all flagged in `docs/RESEARCH.md`: there is no level cap (exMafia had
+an eight-week round and never needed one); the hitlist is a genre convention rather than an
+exMafia feature; Organised Crime is a feature of the engine family exMafia was built on but its
+version here is invented; and the Notice Board has no precedent at all — it exists to give the
+200 simulated accounts a way to ask you for things.
 
 ---
 
